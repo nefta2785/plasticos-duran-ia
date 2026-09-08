@@ -1,0 +1,81 @@
+# ─────────────────────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+/build/
+/dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# ─────────────────────────────────────────────────────────────
+# Variables de entorno / secretos
+# ─────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─────────────────────────────────────────────────────────────
+# macOS
+# ─────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ─────────────────────────────────────────────────────────────
+# Editores / IDEs
+# ─────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+
+# ─────────────────────────────────────────────────────────────
+# Odoo — datos de la instancia local
+#
+# El `data_dir` de Odoo contiene tres subcarpetas: filestore/, sessions/ y
+# addons/ (caché de módulos descargados). Rutas por defecto del data_dir:
+#   - on-premise:            ~/.local/share/Odoo
+#   - imagen oficial Docker: /var/lib/odoo
+#
+# Los patrones de abajo van SIN anclar para que atrapen esas carpetas caiga
+# donde caiga el bind-mount. Cuando el docker-compose defina dónde se monta el
+# data_dir conviene anclarlos a esa ruta concreta; si en su lugar usas un
+# volumen Docker con nombre, nada de esto aparece en el repo y estas líneas
+# quedan solo como red de seguridad.
+# ─────────────────────────────────────────────────────────────
+filestore/
+sessions/
+*.sess
+
+# Config de Odoo: suele llevar el master password (admin_passwd) y credenciales
+# de la BD. Versiona un odoo.conf.example saneado si lo quieres en git.
+odoo.conf
+.odoorc
+
+# Logs. Odoo escribe a stdout por defecto: solo se crea un fichero si defines
+# la opción `logfile`, y no hay un nombre estándar para ese fichero.
+*.log
+logs/
+
+# ─────────────────────────────────────────────────────────────
+# AI pipeline (opcional — descomenta lo que aplique en otra sesión)
+# ─────────────────────────────────────────────────────────────
+# Audios de entrada / transcripciones generadas
+# *.ogg
+# *.opus
+# *.m4a
+# *.mp3
+# *.wav
+# Modelos de Whisper descargados localmente
+# *.pt
+# ai-pipeline/models/
