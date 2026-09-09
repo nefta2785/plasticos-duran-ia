@@ -1,0 +1,52 @@
+# Instancia local y aislada de Odoo Community 19 para "Plásticos Durán".
+#
+# Uso (desde esta carpeta docker/ para que se lea el archivo .env de al lado):
+#   cd docker
+#   cp .env.example .env      # y rellena los valores reales
+#   docker compose up -d
+#
+# Odoo:      http://localhost:8071
+# Postgres:  localhost:5433   (por si te quieres conectar con un cliente SQL)
+
+name: plasticos-duran
+
+services:
+  db:
+    image: postgres:15          # versión que empareja la doc oficial de la imagen Odoo en Docker Hub
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Define POSTGRES_USER en docker/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en docker/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - db-data:/var/lib/postgresql/data/pgdata
+    ports:
+      - "5433:5432"             # Mac 5433 -> contenedor 5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  odoo:
+    image: odoo:19.0            # imagen oficial = Odoo Community 19
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # La imagen de Odoo espera HOST/PORT/USER/PASSWORD (no las POSTGRES_*).
+      HOST: db
+      PORT: "5432"
+      USER: ${POSTGRES_USER:?Define POSTGRES_USER en docker/.env}
+      PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en docker/.env}
+    volumes:
+      - odoo-data:/var/lib/odoo        # filestore + sesiones: volumen nombrado, no toca git
+      - ../custom-addons:/mnt/extra-addons   # ya está en el addons_path por defecto de la imagen
+    ports:
+      - "8071:8069"             # Mac 8071 -> contenedor 8069
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  odoo-data:
