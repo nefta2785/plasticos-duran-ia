@@ -71,7 +71,7 @@ Se le dio a Claude Code un segundo prompt scoped, pidiéndole explícitamente **
 
 Commit: `"Configuración de Docker para Odoo Community aislado"` → subido a GitHub.
 
-**Pendiente detectado (no bloqueante):** el log de Odoo mostró un warning: `invalid addons directory '/mnt/extra-addons', skipped`. Falta diagnosticar cuando se coloque el primer módulo custom en `custom-addons/`.
+**Investigado (no es un problema):** el log de Odoo mostró un warning: `invalid addons directory '/mnt/extra-addons', skipped`. Se diagnosticó paso a paso (se descartaron permisos con `docker compose exec odoo ls -la /mnt/extra-addons`, que salió correcto) hasta confirmar, con la documentación oficial de Odoo, que este warning es el comportamiento esperado cuando la carpeta de addons está **vacía** — Odoo la descarta hasta que contenga al menos un módulo. Se resolverá solo en cuanto se coloque el primer módulo custom en `custom-addons/`.
 
 ### 2.7 Archivo `.env` real
 ```
@@ -139,7 +139,6 @@ Mac (Apple Silicon M1)
 
 ## 4. Pendientes conocidos
 
-- [ ] Diagnosticar el warning `invalid addons directory '/mnt/extra-addons'` cuando se agregue el primer módulo custom.
 - [ ] Documentar (fuera de este repo, en un lugar seguro del usuario) la Master Password del gestor de bases de datos.
 - [ ] Definir cuándo se crea `duranPROD` (base de producción) — no se ha creado todavía, solo `duranDEV`.
 
