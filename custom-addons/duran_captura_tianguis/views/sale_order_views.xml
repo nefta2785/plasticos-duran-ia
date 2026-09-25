@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Lista base: la heredan tanto "Pedidos" como "Cotizaciones". -->
+    <record id="sale_order_tree_zona" model="ir.ui.view">
+        <field name="name">sale.order.list.zona</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.sale_order_tree"/>
+        <field name="arch" type="xml">
+            <field name="partner_id" position="after">
+                <field name="zona_id" optional="show"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="view_order_form_zona" model="ir.ui.view">
+        <field name="name">sale.order.form.zona</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='partner_details']/field[@name='partner_id']" position="after">
+                <field name="zona_id" options="{'no_create': True}" readonly="state == 'cancel'"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_sales_order_filter_zona" model="ir.ui.view">
+        <field name="name">sale.order.search.zona</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_sales_order_filter"/>
+        <field name="arch" type="xml">
+            <field name="partner_id" position="after">
+                <field name="zona_id"/>
+            </field>
+            <filter name="customer" position="after">
+                <filter name="zona" string="Zona" context="{'group_by': 'zona_id'}"/>
+            </filter>
+        </field>
+    </record>
+
+</odoo>
