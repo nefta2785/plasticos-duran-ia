@@ -1,15 +1,52 @@
 import re
+from datetime import timedelta
 
-from odoo import Command
+from odoo import Command, fields
+from odoo.exceptions import UserError
 from odoo.tests import HttpCase, TransactionCase, new_test_user, tagged
 
 GRUPO_CAPTURA = "duran_captura_tianguis.group_captura_tianguis"
-RUTAS_API = ("/captura/api/zonas", "/captura/api/clientes", "/captura/api/catalogo")
+RUTAS_API = (
+    "/captura/api/zonas", "/captura/api/clientes", "/captura/api/catalogo", "/captura/api/habituales",
+)
 
 
 class CapturaDatosPrueba:
     """ Crea todo lo que las pruebas necesitan, sin depender de los datos que
     ya existan en la base. Todo se revierte al terminar cada clase. """
+
+    _numero_orden = 0
+
+    @classmethod
+    def _plantilla(cls, name, **vals):
+        return cls.env["product.template"].create({
+            "name": name, "categ_id": cls.categoria.id, "sale_ok": True, "list_price": 10.0, **vals,
+        })
+
+    @classmethod
+    def _orden(cls, cliente, lineas, dias_atras=1, estado="sale", vendedor=None):
+        """ Orden con fecha `dias_atras` días antes de hoy y en `estado`.
+
+        No usa action_confirm: la numeración de órdenes y de entregas usa
+        secuencias de PostgreSQL, que NO se revierten al terminar la prueba, y
+        confirmar gastaría folios reales de duranDEV. Por lo mismo lleva nombre
+        fijo, se crea en borrador (crear líneas en una orden ya confirmada
+        lanzaría la entrega) y luego solo se cambia su estado. """
+        CapturaDatosPrueba._numero_orden += 1
+        orden = cls.env["sale.order"].with_context(skip_procurement=True).create({
+            "name": f"PRUEBA-HAB-{CapturaDatosPrueba._numero_orden}",
+            "partner_id": cliente.id,
+            "user_id": vendedor.id if vendedor else False,
+            "order_line": [
+                Command.create({"product_id": producto.id, "product_uom_qty": cantidad})
+                for producto, cantidad in lineas
+            ],
+        })
+        orden.write({
+            "state": estado,
+            "date_order": fields.Datetime.now() - timedelta(days=dias_atras),
+        })
+        return orden
 
     @classmethod
     def _crear_datos_captura(cls):
@@ -21,11 +58,7 @@ class CapturaDatosPrueba:
             "category_id": [Command.set(cls.zona_con_clientes.ids)],
         })
         cls.categoria = env["product.category"].create({"name": "Categoría prueba captura"})
-
-        def plantilla(name, **vals):
-            return env["product.template"].create({
-                "name": name, "categ_id": cls.categoria.id, "sale_ok": True, "list_price": 10.0, **vals,
-            })
+        plantilla = cls._plantilla
 
         cls.normal = plantilla("Normal prueba").product_variant_id
         cls.por_kilo = plantilla(
@@ -229,13 +262,37 @@ class TestCapturaHttp(CapturaDatosPrueba, HttpCase):
         por_kilo = productos[self.por_kilo.id]
         self.assertEqual((por_kilo["precio_texto"], por_kilo["unidad"]), (f"{simbolo}10/{kg}", kg))
 
+    def test_habituales(self):
+        self._orden(self.cliente, [(self.normal, 2), (self.por_kilo, 1)])
+        self._orden(self.cliente, [(self.normal, 1)])
+        self._entrar(self.usuario_captura)
+        habituales = self._resultado("/captura/api/habituales", {"cliente_id": self.cliente.id})
+        self.assertEqual([p["id"] for p in habituales], [self.normal.id, self.por_kilo.id])
+
+    def test_habituales_cliente_inexistente_da_error_legible(self):
+        self._entrar(self.usuario_captura)
+        borrado = self.env["res.partner"].create({"name": "Cliente prueba borrado"})
+        cliente_id = borrado.id
+        borrado.unlink()
+        respuesta = self._jsonrpc("/captura/api/habituales", {"cliente_id": cliente_id})
+        self.assertNotIn("result", respuesta)
+        self.assertEqual(respuesta["error"]["data"]["name"], "odoo.exceptions.UserError")
+        self.assertEqual(respuesta["error"]["data"]["message"], "El cliente ya no existe.")
+
     # === Rutas JSON sin grupo / sin sesión === #
+
+    def _params_ruta(self, ruta):
+        if ruta.endswith("clientes"):
+            return {"zona_id": self.zona_con_clientes.id}
+        if ruta.endswith("habituales"):
+            return {"cliente_id": self.cliente.id}
+        return {}
 
     def test_api_sin_grupo_da_access_error(self):
         self._entrar(self.usuario_sin_grupo)
         for ruta in RUTAS_API:
             with self.subTest(ruta=ruta):
-                respuesta = self._jsonrpc(ruta, {"zona_id": self.zona_con_clientes.id} if "clientes" in ruta else {})
+                respuesta = self._jsonrpc(ruta, self._params_ruta(ruta))
                 self.assertNotIn("result", respuesta)
                 self.assertEqual(respuesta["error"]["data"]["name"], "odoo.exceptions.AccessError")
 
@@ -243,6 +300,101 @@ class TestCapturaHttp(CapturaDatosPrueba, HttpCase):
         self.authenticate(None, None)
         for ruta in RUTAS_API:
             with self.subTest(ruta=ruta):
-                respuesta = self._jsonrpc(ruta, {"zona_id": self.zona_con_clientes.id} if "clientes" in ruta else {})
+                respuesta = self._jsonrpc(ruta, self._params_ruta(ruta))
                 self.assertNotIn("result", respuesta)
                 self.assertEqual(respuesta["error"]["code"], 100)
+
+
+@tagged("post_install", "-at_install")
+class TestLoDeSiempre(CapturaDatosPrueba, TransactionCase):
+    """ Cálculo de "Lo de siempre": órdenes confirmadas de los últimos 90
+    días, máximo 8 productos, por frecuencia. """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._crear_datos_captura()
+        # Quien captura tiene "Ventas: solo sus documentos" (implícito en el
+        # grupo); las órdenes del historial son de OTRO vendedor.
+        cls.usuario_captura = new_test_user(
+            cls.env, login="captura_habituales_prueba", groups=GRUPO_CAPTURA,
+            context={"no_reset_password": True},
+        )
+        cls.otro_vendedor = new_test_user(
+            cls.env, login="otro_vendedor_prueba", groups="sales_team.group_sale_salesman",
+            context={"no_reset_password": True},
+        )
+        cls.cliente_habitual = cls.env["res.partner"].create({"name": "Cliente habitual prueba"})
+        cls.p = [cls._plantilla(f"Habitual prueba {i}").product_variant_id for i in range(10)]
+
+    def _habituales(self, cliente):
+        captura = self.env["duran.captura"].with_user(self.usuario_captura)
+        return [producto["id"] for producto in captura.get_habituales(cliente.id)]
+
+    def _orden_de_otro(self, lineas, **kwargs):
+        return self._orden(self.cliente_habitual, lineas, vendedor=self.otro_vendedor, **kwargs)
+
+    def test_orden_por_frecuencia_cantidad_y_fecha(self):
+        a, b, c, d, e, f, g = self.p[:7]
+        self._orden_de_otro([(a, 1), (b, 5), (e, 2)], dias_atras=1)
+        self._orden_de_otro([(a, 1), (b, 5)], dias_atras=2)
+        self._orden_de_otro([(a, 1), (c, 1)], dias_atras=3)
+        self._orden_de_otro([(d, 3)], dias_atras=4)
+        self._orden_de_otro([(g, 1)], dias_atras=5)
+        self._orden_de_otro([(f, 1)], dias_atras=10)
+        # a: 3 órdenes; b: 2 órdenes; el resto 1 orden, desempatados por
+        # cantidad total (d 3 > e 2 > c, g, f 1) y luego por fecha más reciente
+        # (c hace 3 días > g hace 5 > f hace 10).
+        self.assertEqual(self._habituales(self.cliente_habitual), [x.id for x in (a, b, d, e, c, g, f)])
+
+    def test_maximo_8_productos(self):
+        self._orden_de_otro([(producto, 1) for producto in self.p])
+        habituales = self._habituales(self.cliente_habitual)
+        self.assertEqual(len(habituales), 8)
+        self.assertEqual(habituales, [p.id for p in self.p[:8]])
+
+    def test_solo_cuentan_ordenes_confirmadas_recientes_del_cliente(self):
+        valido, viejo, borrador, cancelado, de_otro_cliente, de_contacto = self.p[:6]
+        self._orden_de_otro([(valido, 1)], dias_atras=89)
+        self._orden_de_otro([(viejo, 1)], dias_atras=91)
+        self._orden_de_otro([(borrador, 1)], estado="draft")
+        self._orden_de_otro([(cancelado, 1)], estado="cancel")
+        otro_cliente = self.env["res.partner"].create({"name": "Otro cliente prueba"})
+        self._orden(otro_cliente, [(de_otro_cliente, 1)], vendedor=self.otro_vendedor)
+        # Las órdenes a nombre de un contacto del cliente también cuentan.
+        contacto = self.env["res.partner"].create({
+            "name": "Contacto prueba", "parent_id": self.cliente_habitual.id,
+        })
+        self._orden(contacto, [(de_contacto, 1)], vendedor=self.otro_vendedor)
+        self.assertCountEqual(self._habituales(self.cliente_habitual), [valido.id, de_contacto.id])
+
+    def test_solo_productos_del_catalogo(self):
+        valido = self.p[0]
+        self._orden_de_otro([
+            (valido, 1), (self.pv_precio_cero, 1), (self.pv_sin_precio, 1),
+            (self.no_vendible, 1), (self.archivado, 1),
+        ])
+        self.assertEqual(self._habituales(self.cliente_habitual), [valido.id])
+
+    def test_sin_historial_lista_vacia(self):
+        self.assertEqual(self._habituales(self.cliente_habitual), [])
+
+    def test_ve_historial_de_ordenes_de_otro_vendedor(self):
+        orden = self._orden_de_otro([(self.p[0], 1)])
+        SaleOrder = self.env["sale.order"].with_user(self.usuario_captura)
+        self.assertFalse(SaleOrder.search([("id", "=", orden.id)]), "con solo sus documentos no ve la orden")
+        self.assertEqual(self._habituales(self.cliente_habitual), [self.p[0].id])
+
+    def test_mismos_datos_que_el_catalogo(self):
+        self._orden_de_otro([(self.pv_con_precio, 1), (self.normal, 1)])
+        captura = self.env["duran.captura"].with_user(self.usuario_captura)
+        catalogo = {p["id"]: p for c in captura.get_catalogo() for p in c["productos"]}
+        for producto in captura.get_habituales(self.cliente_habitual.id):
+            self.assertEqual(producto, catalogo[producto["id"]])
+
+    def test_cliente_inexistente(self):
+        borrado = self.env["res.partner"].create({"name": "Cliente prueba borrado"})
+        cliente_id = borrado.id
+        borrado.unlink()
+        with self.assertRaisesRegex(UserError, "El cliente ya no existe."):
+            self.env["duran.captura"].with_user(self.usuario_captura).get_habituales(cliente_id)

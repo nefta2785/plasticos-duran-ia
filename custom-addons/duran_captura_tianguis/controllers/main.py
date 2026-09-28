@@ -53,3 +53,7 @@ class CapturaTianguis(http.Controller):
     @http.route("/captura/api/catalogo", type="jsonrpc", auth="user", methods=["POST"])
     def api_catalogo(self):
         return self._captura().get_catalogo()
+
+    @http.route("/captura/api/habituales", type="jsonrpc", auth="user", methods=["POST"])
+    def api_habituales(self, cliente_id):
+        return self._captura().get_habituales(cliente_id)

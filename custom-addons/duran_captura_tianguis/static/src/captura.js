@@ -30,9 +30,12 @@
         pantalla: "zonas", // "zonas" | "clientes" | "productos"
         zona: null, // {id, nombre}
         cliente: null, // {id, nombre}
-        categoriaId: null,
+        categoriaId: null, // pestaña activa: id de categoría o PESTANA_HABITUALES
         pedido: new Map(), // id de producto -> cantidad entera (>= 1)
+        habituales: [], // "Lo de siempre" del cliente actual
+        clienteDibujado: null, // para abrir "Lo de siempre" al llegar a otro cliente
     };
+    const PESTANA_HABITUALES = "habituales";
     let catalogo = null; // [{id, nombre, productos: [...]}], se carga una sola vez
     let numeroVista = 0; // para descartar respuestas de una pantalla que ya se dejó
     let confirmando = false;
@@ -326,42 +329,62 @@
     // === Pantalla: Productos ===
 
     async function dibujarProductos() {
-        ponerTitulo(estado.cliente.nombre, estado.zona && estado.zona.nombre);
+        const cliente = estado.cliente;
+        ponerTitulo(cliente.nombre, estado.zona && estado.zona.nombre);
         actualizarPedido();
         const vista = nuevaVista();
-        if (!catalogo) {
-            ui.categorias.replaceChildren();
-            mostrar(aviso("Cargando productos…"));
-            try {
-                catalogo = await api("/captura/api/catalogo");
-            } catch (error) {
-                if (vigente(vista)) {
-                    mostrarError(error, dibujarProductos);
-                }
-                return;
+        ui.categorias.replaceChildren();
+        mostrar(aviso("Cargando productos…"));
+        let habituales;
+        try {
+            // El catálogo se pide una sola vez; "Lo de siempre", cada vez que
+            // se entra a un cliente (así refleja sus órdenes más recientes).
+            [catalogo, habituales] = await Promise.all([
+                catalogo || api("/captura/api/catalogo"),
+                api("/captura/api/habituales", { cliente_id: cliente.id }),
+            ]);
+        } catch (error) {
+            if (vigente(vista)) {
+                mostrarError(error, dibujarProductos);
             }
-            if (!vigente(vista)) {
-                return;
-            }
+            return;
         }
-        if (!catalogo.length) {
+        if (!vigente(vista)) {
+            return;
+        }
+        estado.habituales = habituales;
+        if (estado.clienteDibujado !== cliente.id) {
+            // Cliente nuevo: se abre la primera pestaña ("Lo de siempre" si hay).
+            estado.clienteDibujado = cliente.id;
+            estado.categoriaId = null;
+        }
+        const todas = pestanas();
+        if (!todas.length) {
             mostrar(aviso("No hay productos a la venta."));
             return;
         }
-        if (!catalogo.some((categoria) => categoria.id === estado.categoriaId)) {
-            estado.categoriaId = catalogo[0].id;
+        if (!todas.some((pestana) => pestana.id === estado.categoriaId)) {
+            estado.categoriaId = todas[0].id;
         }
         dibujarCategorias(true);
         dibujarListaProductos();
     }
 
+    function pestanas() {
+        // "Lo de siempre" va primero y solo existe si el cliente tiene historial.
+        const habituales = estado.habituales.length
+            ? [{ id: PESTANA_HABITUALES, nombre: "⭐ Lo de siempre", productos: estado.habituales }]
+            : [];
+        return habituales.concat(catalogo);
+    }
+
     function categoriaActual() {
-        return catalogo.find((categoria) => categoria.id === estado.categoriaId);
+        return pestanas().find((pestana) => pestana.id === estado.categoriaId);
     }
 
     function dibujarCategorias(centrarActiva) {
         ui.categorias.replaceChildren(
-            ...catalogo.map((categoria) => {
+            ...pestanas().map((categoria) => {
                 const enPedido = categoria.productos.filter((p) => estado.pedido.has(p.id)).length;
                 return el(
                     "button",

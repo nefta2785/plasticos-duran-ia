@@ -1,11 +1,19 @@
-from odoo import _, api, models
+from datetime import timedelta
+
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import format_amount
+
+# "Lo de siempre": órdenes confirmadas de los últimos DIAS_HABITUALES días,
+# como máximo MAX_HABITUALES productos.
+DIAS_HABITUALES = 90
+MAX_HABITUALES = 8
 
 
 class DuranCaptura(models.AbstractModel):
     """ Datos de solo lectura para la pantalla /captura. Todo se lee con los
-    permisos del usuario que captura (sin sudo). """
+    permisos del usuario que captura; la única excepción (con sudo) es el
+    historial de "Lo de siempre", ver `get_habituales`. """
     _name = "duran.captura"
     _description = "Captura de pedidos en tianguis"
 
@@ -29,13 +37,8 @@ class DuranCaptura(models.AbstractModel):
 
     @api.model
     def get_catalogo(self):
-        """ Variantes activas y vendibles agrupadas por categoría. Se excluyen
-        las de peso variable sin precio por kg, porque se venderían en $0. """
-        productos = self.env["product.product"].search([
-            ("sale_ok", "=", True),
-            ("product_tmpl_id.active", "=", True),
-            "|", ("es_peso_variable", "=", False), ("precio_por_kg", ">", 0),
-        ])
+        """ Variantes activas y vendibles agrupadas por categoría. """
+        productos = self.env["product.product"].search(self._dominio_productos_vendibles())
         productos = productos.sorted(
             lambda p: (p.categ_id.complete_name or "", p.name.lower(), p.id)
         )
@@ -50,6 +53,66 @@ class DuranCaptura(models.AbstractModel):
             })
             categoria["productos"].append(self._get_producto_vals(producto, currency, uom_unidad))
         return list(categorias.values())
+
+    @api.model
+    def get_habituales(self, cliente_id):
+        """ "Lo de siempre": los productos que más pide el cliente según sus
+        órdenes confirmadas de los últimos 90 días, como máximo 8.
+
+        Orden: en cuántas órdenes distintas aparece (frecuencia); a igual
+        frecuencia, mayor cantidad total; luego, pedido más reciente.
+        Solo se devuelven productos que también están en el catálogo. Sin
+        historial devuelve una lista vacía.
+
+        El historial se lee con sudo: con "Ventas: solo sus documentos" el
+        usuario solo vería las órdenes donde él es el vendedor, y el historial
+        real incluye órdenes de otros vendedores. El sudo se limita a este
+        cliente (que el usuario sí puede leer) y solo expone qué productos
+        pidió, nunca las órdenes. """
+        cliente = self.env["res.partner"].browse(int(cliente_id)).exists()
+        if not cliente:
+            raise UserError(_("El cliente ya no existe."))
+        cliente.check_access("read")
+
+        desde = fields.Datetime.now() - timedelta(days=DIAS_HABITUALES)
+        grupos = self.env["sale.order.line"].sudo()._read_group(
+            [
+                ("order_id.partner_id", "child_of", cliente.id),
+                ("state", "=", "sale"),
+                ("order_id.date_order", ">=", desde),
+                ("display_type", "=", False),
+                ("product_id", "!=", False),
+            ],
+            groupby=["product_id", "order_id"],
+            aggregates=["product_uom_qty:sum"],
+        )
+        historial = {}  # id de producto -> [órdenes, cantidad total, fecha más reciente]
+        for producto, orden, cantidad in grupos:
+            datos = historial.setdefault(producto.id, [0, 0.0, orden.date_order])
+            datos[0] += 1
+            datos[1] += cantidad
+            datos[2] = max(datos[2], orden.date_order)
+
+        # De vuelta a los permisos del usuario: mismo filtro que el catálogo.
+        productos = self.env["product.product"].search(
+            self._dominio_productos_vendibles() + [("id", "in", list(historial))]
+        )
+        productos = productos.sorted(lambda p: (
+            -historial[p.id][0], -historial[p.id][1], -historial[p.id][2].timestamp(), p.id,
+        ))[:MAX_HABITUALES]
+        currency = self.env.company.currency_id
+        uom_unidad = self.env.ref("uom.product_uom_unit", raise_if_not_found=False)
+        return [self._get_producto_vals(producto, currency, uom_unidad) for producto in productos]
+
+    @api.model
+    def _dominio_productos_vendibles(self):
+        """ Variantes activas y vendibles. Se excluyen las de peso variable sin
+        precio por kg, porque se venderían en $0. """
+        return [
+            ("sale_ok", "=", True),
+            ("product_tmpl_id.active", "=", True),
+            "|", ("es_peso_variable", "=", False), ("precio_por_kg", ">", 0),
+        ]
 
     @api.model
     def _get_producto_vals(self, producto, currency, uom_unidad):

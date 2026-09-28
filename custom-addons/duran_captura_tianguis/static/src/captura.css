@@ -75,9 +75,12 @@ button {
     margin: 0;
     font-size: 24px;
     font-weight: 800;
-    white-space: nowrap;
+    /* Nombres de cliente largos: hasta 2 líneas antes de cortar. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .subtitulo {
