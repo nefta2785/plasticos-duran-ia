@@ -4,7 +4,7 @@ import re
 from odoo import Command
 from odoo.tests import HttpCase, tagged
 
-from .common import GRUPO_CAPTURA, RUTAS_API, CapturaDatosPrueba, CapturaHttpMixin
+from .common import GRUPO_CAPTURA, RUTAS_API, RUTAS_COBRO, CapturaDatosPrueba, CapturaHttpMixin
 
 
 @tagged("post_install", "-at_install")
@@ -161,7 +161,7 @@ class TestPaginaYRutas(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
     def test_api_sin_grupo_da_access_error(self):
         for usuario in (self.usuario_sin_grupo, self.usuario_portal):
             self._entrar(usuario)
-            for ruta in RUTAS_API:
+            for ruta in RUTAS_API + RUTAS_COBRO:
                 with self.subTest(usuario=usuario.login, ruta=ruta):
                     respuesta = self._jsonrpc(ruta, self._params_ruta(ruta))
                     self.assertNotIn("result", respuesta)
@@ -169,7 +169,7 @@ class TestPaginaYRutas(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
 
     def test_api_sin_sesion_da_sesion_expirada(self):
         self.authenticate(None, None)
-        for ruta in RUTAS_API:
+        for ruta in RUTAS_API + RUTAS_COBRO:
             with self.subTest(ruta=ruta):
                 respuesta = self._jsonrpc(ruta, self._params_ruta(ruta))
                 self.assertNotIn("result", respuesta)

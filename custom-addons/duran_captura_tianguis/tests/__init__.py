@@ -1,5 +1,6 @@
 from . import test_bitacora
 from . import test_cobro_bitacora
+from . import test_cobro_lectura
 from . import test_entrega_confirmar
 from . import test_entrega_lectura
 from . import test_entrega_vista_previa

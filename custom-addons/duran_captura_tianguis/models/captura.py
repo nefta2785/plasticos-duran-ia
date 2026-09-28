@@ -36,7 +36,8 @@ class DuranCaptura(models.AbstractModel):
     usuario que captura; las únicas excepciones (con sudo) son el historial de
     "Lo de siempre" (ver `get_habituales`), los precios de las líneas de venta
     de las entregas pendientes (ver `get_pendientes_entrega` y
-    `_importes_entrega`) y los límites de peso (parámetros del sistema). """
+    `_importes_entrega`), los límites de peso (parámetros del sistema) y lo
+    que hay por cobrarle a un cliente (ver `get_cobro`). """
     _name = "duran.captura"
     _description = "Captura de pedidos en tianguis"
 
@@ -182,18 +183,19 @@ class DuranCaptura(models.AbstractModel):
         clientes = self._clientes_de_zona(self._zona(zona_id))
         if not clientes:
             return []
-        entregas = self._entregas_pendientes(clientes)
-        # Un cliente tiene pendientes si el contacto de alguna entrega es él
-        # mismo o uno de sus contactos hijos (p. ej. una dirección de entrega).
-        con_pendientes = set()
-        for contacto in entregas.partner_id:
+        return self._clientes_de_contactos(clientes, self._entregas_pendientes(clientes).partner_id)
+
+    @api.model
+    def _clientes_de_contactos(self, clientes, contactos):
+        """ Los `clientes` que son alguno de `contactos` o su padre: el contacto
+        de una entrega o factura puede ser uno de sus contactos hijos (p. ej.
+        una dirección de entrega). """
+        ids = set()
+        for contacto in contactos:
             while contacto:
-                con_pendientes.add(contacto.id)
+                ids.add(contacto.id)
                 contacto = contacto.parent_id
-        return [
-            {"id": cliente.id, "nombre": cliente.name}
-            for cliente in clientes if cliente.id in con_pendientes
-        ]
+        return [{"id": cliente.id, "nombre": cliente.name} for cliente in clientes if cliente.id in ids]
 
     @api.model
     def get_pendientes_entrega(self, cliente_id, zona_id):
@@ -717,6 +719,14 @@ class DuranCaptura(models.AbstractModel):
         for producto in entrega["productos"]:
             for movimiento, cantidad in producto["asignacion"]:
                 cantidades[movimiento.sale_line_id] += cantidad
+        return self._importes_facturas(cantidades, precios)
+
+    @api.model
+    def _importes_facturas(self, cantidades, precios):
+        """ ({id de línea de venta: importe}, total) de facturar `cantidades`
+        ({línea de venta: cantidad}) de esas líneas, al precio de `precios`
+        ({línea de venta: precio unitario}) o, si no viene, al de la línea;
+        ver `_importes_entrega`. Solo lee (con sudo) las líneas recibidas. """
         AccountTax = self.env["account.tax"]
         claves_factura = self.env["sale.order"]._get_invoice_grouping_keys()
         valores_factura = {}  # orden -> valores de su factura
@@ -795,6 +805,219 @@ class DuranCaptura(models.AbstractModel):
             ("return_id", "=", False),
             ("state", "not in", ("done", "cancel")),
         ])
+
+    # === Modo Cobro === #
+
+    @api.model
+    def get_clientes_cobro(self, zona_id):
+        """ Clientes de la zona (misma regla que `get_clientes`) con algo por
+        cobrar: lo entregado sin facturar o saldo pendiente de facturas
+        publicadas, sin importar el vendedor ni la zona de la orden. También
+        los que tienen una factura en borrador, para que la pantalla avise que
+        hay que resolverla en Odoo antes de cobrarles. """
+        clientes = self._clientes_de_zona(self._zona(zona_id))
+        if not clientes:
+            return []
+        contactos = (
+            self._lineas_sin_facturar(clientes).filtered(self._por_facturar).order_id.partner_id
+            | self._saldos_abiertos(clientes).filtered(lambda a: a.amount_residual > 0).partner_id
+            | self._facturas_borrador(clientes).partner_id
+        )
+        return self._clientes_de_contactos(clientes, contactos)
+
+    @api.model
+    def get_cobro(self, cliente_id, zona_id):
+        """ Lo que hay que cobrarle al cliente. No escribe nada.
+
+        - `entregado`: lo entregado sin facturar (de todas sus órdenes, de
+          cualquier vendedor), con la cantidad, el precio y el importe que
+          tendrá su línea de factura. `total_entregado` es el total de las
+          facturas que se crearán (Odoo junta las órdenes por dirección).
+        - `saldo_anterior`: facturas publicadas con saldo pendiente, con su
+          saldo real (incluye los ajustes hechos a mano en Odoo y los pagos
+          parciales), de la más antigua a la más nueva (el orden en que Odoo
+          les aplica un pago).
+        - `creditos`: su saldo a favor (notas de crédito o pagos sin aplicar),
+          que se resta del total.
+        - `total_a_cobrar` = entregado + saldo anterior - saldo a favor (nunca
+          menos de 0; lo que sobre del saldo a favor va en `saldo_a_favor`).
+        - `borradores`: facturas en borrador del cliente. Mientras haya alguna
+          no se le puede cobrar (`puede_cobrar`): hay que publicarla o
+          cancelarla en Odoo.
+        - `devoluciones`: devoluciones de algo ya facturado, sin nota de
+          crédito. No entran en el cobro; solo se avisa.
+
+        Órdenes, facturas y saldos se leen con sudo: pueden ser de otro
+        vendedor ("Ventas: solo sus documentos" no deja leerlos). El sudo solo
+        lee, y solo lo de este cliente (y sus direcciones) en las compañías
+        del usuario. """
+        cliente = self._cliente_en_zona(cliente_id, self._zona(zona_id))
+        currency = self.env.company.currency_id
+        uom_unidad = self.env.ref("uom.product_uom_unit", raise_if_not_found=False)
+
+        lineas = self._lineas_sin_facturar(cliente)
+        por_facturar = lineas.filtered(self._por_facturar)
+        devoluciones = lineas - por_facturar
+        valores_factura = {linea: linea._prepare_invoice_line() for linea in por_facturar}
+        importes, total_entregado = self._importes_facturas(
+            {linea: valores["quantity"] for linea, valores in valores_factura.items()},
+            {linea: valores["price_unit"] for linea, valores in valores_factura.items()},
+        )
+        entregado = []
+        for linea, valores in valores_factura.items():
+            producto = self._get_producto_vals(linea.product_id, currency, uom_unidad)
+            if producto["es_peso_variable"]:
+                precio = valores["precio_por_kg"]
+            else:
+                precio = valores["price_unit"]
+            entregado.append({
+                "linea_id": linea.id,
+                "orden": linea.order_id.name,
+                "id": producto["id"],
+                "nombre": producto["nombre"],
+                "unidad": producto["unidad"],
+                "es_peso_variable": producto["es_peso_variable"],
+                "cantidad": valores["quantity"],
+                "peso": valores["peso_real"] if producto["es_peso_variable"] else None,
+                "precio": precio,
+                "precio_texto": self._formato_precio(precio, currency) + self._sufijo_precio(linea.product_id, uom_unidad),
+                "importe": importes.get(linea.id, 0.0),
+            })
+
+        apuntes = self._saldos_abiertos(cliente)
+        saldo_anterior = self._documentos_con_saldo(apuntes.filtered(lambda a: a.amount_residual > 0))
+        creditos = self._documentos_con_saldo(apuntes.filtered(lambda a: a.amount_residual < 0))
+        total_saldo = currency.round(sum(documento["saldo"] for documento in saldo_anterior))
+        total_creditos = currency.round(sum(documento["saldo"] for documento in creditos))
+        total = currency.round(total_entregado + total_saldo - total_creditos)
+        total_a_cobrar = max(total, 0.0)
+
+        borradores = [
+            {"move_id": factura.id, "folio": factura.name or _("Borrador"), "origen": factura.invoice_origin or "",
+             "total": factura.amount_total}
+            for factura in self._facturas_borrador(cliente)
+        ]
+        avisos = []
+        if borradores:
+            avisos.append(_("Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."))
+        if devoluciones:
+            avisos.append(_(
+                "Hay devoluciones sin nota de crédito (%(ordenes)s). No entran en este cobro: haz la "
+                "nota de crédito en Odoo.",
+                ordenes=", ".join(devoluciones.order_id.mapped("name")),
+            ))
+
+        def texto(importe):
+            return self._formato_precio(importe, currency, centavos=True)
+
+        return {
+            "cliente": {"id": cliente.id, "nombre": cliente.name},
+            "entregado": entregado,
+            "total_entregado": total_entregado,
+            "total_entregado_texto": texto(total_entregado),
+            "saldo_anterior": saldo_anterior,
+            "total_saldo_anterior": total_saldo,
+            "total_saldo_anterior_texto": texto(total_saldo),
+            "creditos": creditos,
+            "total_creditos": total_creditos,
+            "total_creditos_texto": texto(total_creditos),
+            "total_a_cobrar": total_a_cobrar,
+            "total_a_cobrar_texto": texto(total_a_cobrar),
+            "saldo_a_favor": currency.round(total_a_cobrar - total),
+            "borradores": borradores,
+            "devoluciones": [
+                {
+                    "linea_id": linea.id,
+                    "orden": linea.order_id.name,
+                    "nombre": self._get_producto_vals(linea.product_id, currency, uom_unidad)["nombre"],
+                    "cantidad": -linea.qty_to_invoice,
+                }
+                for linea in devoluciones
+            ],
+            "avisos": avisos,
+            "puede_cobrar": not borradores and bool(por_facturar or saldo_anterior),
+        }
+
+    @api.model
+    def _por_facturar(self, linea):
+        """ Filtro de `_lineas_sin_facturar`: lo entregado sin facturar (sin
+        las devoluciones). """
+        return linea.product_uom_id.compare(linea.qty_to_invoice, 0.0) > 0
+
+    @api.model
+    def _lineas_sin_facturar(self, clientes):
+        """ Líneas de las órdenes confirmadas de los clientes (o de sus
+        direcciones) con cantidad por facturar distinta de 0: lo entregado sin
+        facturar (> 0) y las devoluciones de algo ya facturado sin nota de
+        crédito (< 0), de la orden más antigua a la más nueva. Con sudo (solo
+        lectura): las órdenes pueden ser de otro vendedor. """
+        return self.env["sale.order.line"].sudo().search([
+            ("order_id.partner_id", "child_of", clientes.ids),
+            ("company_id", "in", self.env.companies.ids),
+            ("state", "=", "sale"),
+            ("display_type", "=", False),
+            ("is_downpayment", "=", False),
+            ("qty_to_invoice", "!=", 0),
+        ]).sorted(lambda linea: (linea.order_id.id, linea.sequence, linea.id))
+
+    @api.model
+    def _saldos_abiertos(self, clientes):
+        """ Apuntes por cobrar publicados y sin conciliar de los clientes (o de
+        sus direcciones): con saldo positivo, lo que deben (facturas, con sus
+        ajustes y pagos parciales); con saldo negativo, su saldo a favor (notas
+        de crédito o pagos sin aplicar). Es el mismo saldo que usa Odoo al
+        aplicar un pago. Con sudo (solo lectura): pueden ser de otro vendedor,
+        y quien captura no puede leer pagos. """
+        return self.env["account.move.line"].sudo().search([
+            ("partner_id", "child_of", clientes.ids),
+            ("company_id", "in", self.env.companies.ids),
+            ("account_type", "=", "asset_receivable"),
+            ("parent_state", "=", "posted"),
+            ("reconciled", "=", False),
+            ("amount_residual", "!=", 0),
+        ])
+
+    @api.model
+    def _facturas_borrador(self, clientes):
+        """ Facturas y notas de crédito en borrador de los clientes (o de sus
+        direcciones). Con sudo (solo lectura). """
+        return self.env["account.move"].sudo().search([
+            ("partner_id", "child_of", clientes.ids),
+            ("company_id", "in", self.env.companies.ids),
+            ("move_type", "in", ("out_invoice", "out_refund")),
+            ("state", "=", "draft"),
+        ], order="id")
+
+    @api.model
+    def _documentos_con_saldo(self, apuntes):
+        """ Un renglón por documento (factura, nota de crédito, pago) con el
+        saldo de sus apuntes, siempre en positivo, en el orden en que Odoo les
+        aplica un pago: el de `account.move.line._optimize_reconciliation_plan`
+        (vencimiento o fecha, moneda, monto), y luego por documento. """
+        def orden_odoo(apunte):
+            return (apunte.date_maturity or apunte.date, apunte.currency_id.id, apunte.amount_currency, apunte.balance)
+
+        por_documento = defaultdict(lambda: self.env["account.move.line"].sudo())
+        for apunte in apuntes:
+            por_documento[apunte.move_id] |= apunte
+        documentos = sorted(
+            por_documento.items(),
+            key=lambda par: (min(orden_odoo(apunte) for apunte in par[1]), par[0].id),
+        )
+        currency = self.env.company.currency_id
+        resultado = []
+        for documento, apuntes_documento in documentos:
+            saldo = currency.round(abs(sum(apuntes_documento.mapped("amount_residual"))))
+            fecha = documento.invoice_date or documento.date
+            resultado.append({
+                "move_id": documento.id,
+                "folio": documento.name,
+                "fecha": fields.Date.to_string(fecha),
+                "total": documento.amount_total,
+                "saldo": saldo,
+                "saldo_texto": self._formato_precio(saldo, currency, centavos=True),
+            })
+        return resultado
 
     # === Validaciones comunes === #
 
