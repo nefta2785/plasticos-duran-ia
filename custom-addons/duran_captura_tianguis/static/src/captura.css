@@ -433,3 +433,156 @@ button {
     font-size: 22px;
     font-weight: 700;
 }
+
+/* === Modo Entrega: lo pendiente === */
+
+.entrega-producto {
+    border: 2px solid var(--borde);
+    border-radius: var(--radio);
+    overflow: hidden;
+}
+.entrega-encabezado {
+    padding: 10px 16px;
+    background: var(--seleccion);
+    border-bottom: 2px solid var(--borde);
+}
+
+.renglon {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px;
+}
+.renglon + .renglon { border-top: 2px solid var(--separador); }
+.renglon.no-llevo { background: #efefef; }
+.renglon.con-problema {
+    background: #fde8ec;
+    box-shadow: inset 6px 0 0 var(--peligro);
+}
+
+.renglon-titulo {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.renglon-nombre { font-size: 20px; font-weight: 800; }
+.marca-sin-existencia {
+    padding: 2px 10px;
+    border: 2px solid var(--peligro);
+    border-radius: 999px;
+    color: var(--peligro);
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.peso {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.peso-campo {
+    flex: 1;
+    min-width: 0;
+    min-height: 60px;
+    padding: 6px 14px;
+    border: 3px solid var(--borde);
+    border-radius: var(--radio);
+    font: inherit;
+    font-size: 28px;               /* 16px o más: el celular no hace zoom */
+    font-weight: 800;
+}
+.peso-campo:focus { outline: 4px solid var(--primario); outline-offset: 1px; }
+.peso-unidad { font-size: 24px; font-weight: 800; }
+.peso-eco {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--primario);
+}
+.renglon-mensaje {
+    margin: 0;
+    color: var(--peligro);
+    font-size: 19px;
+    font-weight: 800;
+}
+
+.cantidad-controles {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.cantidad-controles .btn {
+    flex: none;
+    width: 72px;
+    min-height: 60px;
+    padding: 0;
+    font-size: 32px;
+    text-align: center;
+}
+.cantidad-controles .btn:disabled { opacity: 0.35; cursor: default; }
+.cantidad-entrega {
+    flex: 1;
+    font-size: 26px;
+    font-weight: 800;
+    text-align: center;
+}
+
+.btn-no-llevo {
+    min-height: 56px;
+    font-size: 19px;
+    text-align: center;
+    color: var(--peligro);
+    border-color: var(--peligro);
+}
+.btn-no-llevo[aria-pressed="true"] {
+    background: var(--peligro);
+    color: var(--peligro-texto);
+}
+
+.algo-mas { margin-top: 24px; }
+
+/* === Modo Entrega: resumen y entrega confirmada === */
+
+.resumen-detalle, .resumen-advertencia {
+    display: block;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--texto-suave);
+}
+.resumen-advertencia { color: var(--peligro); font-weight: 800; }
+.resumen-importe { flex: none; font-size: 22px; font-weight: 800; }
+.seccion-titulo { margin: 24px 0 10px; font-size: 20px; font-weight: 800; }
+.resumen-no-llevo {
+    padding: 10px 16px;
+    border: 2px dashed var(--texto-suave);
+    border-radius: var(--radio);
+    font-size: 19px;
+    font-weight: 600;
+    text-decoration: line-through;
+}
+
+.total-entrega {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: 20px;
+    padding: 14px 16px;
+    border-radius: var(--radio);
+    background: var(--texto);
+    color: var(--fondo);
+}
+.total-etiqueta { font-size: 24px; font-weight: 800; }
+.total-monto { font-size: 36px; font-weight: 900; }
+
+.cobrar {
+    margin: 0 0 8px;
+    font-size: 40px;
+    font-weight: 900;
+}
+.folios {
+    margin: 12px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 18px;
+    font-weight: 600;
+}

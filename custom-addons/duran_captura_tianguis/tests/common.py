@@ -16,7 +16,7 @@ RUTAS_PEDIDO = (
     "/captura/api/zonas", "/captura/api/clientes", "/captura/api/catalogo",
     "/captura/api/habituales", "/captura/api/enviar",
 )
-# Rutas del modo Entrega: la pantalla todavía no las usa (paso 6).
+# Rutas del modo Entrega.
 RUTAS_ENTREGA = (
     "/captura/api/entrega/clientes", "/captura/api/entrega/pendiente",
     "/captura/api/entrega/vista_previa", "/captura/api/entrega/confirmar",
