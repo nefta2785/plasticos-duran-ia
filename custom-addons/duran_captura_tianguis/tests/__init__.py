@@ -1,5 +1,6 @@
 from . import test_bitacora
 from . import test_entrega_lectura
+from . import test_entrega_vista_previa
 from . import test_enviar
 from . import test_lo_de_siempre
 from . import test_pagina_y_rutas

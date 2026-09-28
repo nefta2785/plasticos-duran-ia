@@ -1,9 +1,10 @@
 import re
+from collections import defaultdict
 from datetime import timedelta
 
 from odoo import Command, _, api, fields, models
 from odoo.exceptions import UserError
-from odoo.tools import format_amount
+from odoo.tools import float_round, format_amount
 
 # "Lo de siempre": órdenes confirmadas de los últimos DIAS_HABITUALES días,
 # como máximo MAX_HABITUALES productos.
@@ -13,12 +14,27 @@ MAX_HABITUALES = 8
 # Token que genera la pantalla para cada pedido: 32 caracteres hexadecimales.
 FORMATO_TOKEN = re.compile(r"^[0-9a-f]{32}$")
 
+# Modo Entrega: el peso de un rollo llega tal cual se tecleó ("1.250", "1,250",
+# "1250"), en kg y con máximo 3 decimales. Los límites son parámetros del
+# sistema (data/ir_config_parameter.xml).
+FORMATO_PESO = re.compile(r"^(\d+)(?:[.,](\d+))?$")
+DECIMALES_PESO = 3
+PARAMETROS_PESO = {
+    "bloqueo_max": "duran_captura_tianguis.peso_bloqueo_max",
+    "advertencia_min": "duran_captura_tianguis.peso_advertencia_min",
+    "advertencia_max": "duran_captura_tianguis.peso_advertencia_max",
+}
+# Sin punto decimal y de este valor en adelante, se sugiere que faltó el punto
+# ("1250" -> "¿Quisiste decir 1.250 kg?").
+PESO_SIN_PUNTO_SOSPECHOSO = 100
+
 
 class DuranCaptura(models.AbstractModel):
     """ Datos para la pantalla /captura. Todo se lee con los permisos del
     usuario que captura; las únicas excepciones (con sudo) son el historial de
-    "Lo de siempre" (ver `get_habituales`) y los precios de las líneas de venta
-    de las entregas pendientes (ver `get_pendientes_entrega`). """
+    "Lo de siempre" (ver `get_habituales`), los precios de las líneas de venta
+    de las entregas pendientes (ver `get_pendientes_entrega` y
+    `_importes_entrega`) y los límites de peso (parámetros del sistema). """
     _name = "duran.captura"
     _description = "Captura de pedidos en tianguis"
 
@@ -191,10 +207,7 @@ class DuranCaptura(models.AbstractModel):
         vendedores; el sudo se limita a las líneas de los movimientos que ya se
         filtraron aquí (cliente de la zona, entrega de venta pendiente). """
         cliente = self._cliente_en_zona(cliente_id, self._zona(zona_id))
-        movimientos = self._entregas_pendientes(cliente).move_ids.filtered(
-            lambda m: m.state not in ("done", "cancel")
-            and m.product_uom.compare(m.product_uom_qty, 0.0) > 0
-        ).sorted(lambda m: (m.picking_id.sale_id.id, m.sale_line_id.id or 0, m.id))
+        movimientos = self._movimientos_pendientes(cliente)
         precio_linea = {linea.id: linea.price_unit for linea in movimientos.sale_line_id.sudo()}
 
         currency = self.env.company.currency_id
@@ -229,6 +242,295 @@ class DuranCaptura(models.AbstractModel):
                 self._precio_de_lineas(grupo, currency, uom_unidad)
             resultado.append(grupo)
         return {"cliente": {"id": cliente.id, "nombre": cliente.name}, "productos": resultado}
+
+    @api.model
+    def get_vista_previa_entrega(self, cliente_id, zona_id, rollos, productos):
+        """ Vista previa de lo que se va a entregar al cliente: importe por
+        línea, total y revisión del peso de cada rollo. No escribe nada.
+
+        :param rollos: [{"move_id": int, "peso": "1.250"}, ...] el peso tal cual
+            se tecleó (punto o coma decimal).
+        :param productos: [{"producto_id": int, "cantidad": int >= 1}, ...] para
+            los productos que no son de peso variable.
+
+        Datos inválidos (movimientos que no son de este cliente o ya no están
+        pendientes, cantidades no enteras o mayores a lo pendiente) lanzan un
+        error. Los pesos fuera de límites no: cada rollo trae su `bloqueo`
+        (impide confirmar) y sus `advertencias` (piden confirmar), y
+        `puede_confirmar` dice si hay algún bloqueo. Con algún bloqueo el total
+        va vacío. """
+        entrega = self._preparar_entrega(cliente_id, zona_id, rollos, productos)
+        puede_confirmar = not any(rollo["bloqueo"] for rollo in entrega["rollos"])
+        importes, total = self._importes_entrega(entrega) if puede_confirmar else ({}, None)
+        currency = self.env.company.currency_id
+        uom_unidad = self.env.ref("uom.product_uom_unit", raise_if_not_found=False)
+
+        def importe(lineas_venta):
+            if not puede_confirmar:
+                return None
+            return currency.round(sum(importes.get(linea.id, 0.0) for linea in lineas_venta))
+
+        return {
+            "cliente": {"id": entrega["cliente"].id, "nombre": entrega["cliente"].name},
+            "rollos": [
+                {
+                    "move_id": rollo["move"].id,
+                    "producto_id": rollo["move"].product_id.id,
+                    "nombre": self._get_producto_vals(rollo["move"].product_id, currency, uom_unidad)["nombre"],
+                    "peso": rollo["peso"],
+                    "precio": rollo["move"].product_id.precio_por_kg,
+                    "importe": importe(rollo["move"].sale_line_id) if not rollo["bloqueo"] else None,
+                    "bloqueo": rollo["bloqueo"],
+                    "advertencias": rollo["advertencias"],
+                    "sugerencia": rollo["sugerencia"],
+                }
+                for rollo in entrega["rollos"]
+            ],
+            "productos": [
+                {
+                    **{
+                        clave: valor
+                        for clave, valor in self._get_producto_vals(linea["producto"], currency, uom_unidad).items()
+                        if clave in ("id", "nombre", "unidad")
+                    },
+                    "cantidad": linea["cantidad"],
+                    "importe": importe(self.env["sale.order.line"].union(
+                        *(movimiento.sale_line_id for movimiento, _cantidad in linea["asignacion"])
+                    )),
+                }
+                for linea in entrega["productos"]
+            ],
+            "total": total,
+            "total_texto": self._formato_precio(total, currency, centavos=True) if puede_confirmar else None,
+            "puede_confirmar": puede_confirmar,
+        }
+
+    @api.model
+    def _preparar_entrega(self, cliente_id, zona_id, rollos, productos):
+        """ Valida lo que se va a entregar (mismas reglas para la vista previa
+        y para la confirmación) y lo ordena de la orden más antigua a la más
+        nueva. La cantidad de un producto se reparte entre sus movimientos
+        pendientes empezando por la orden más antigua. """
+        cliente = self._cliente_en_zona(cliente_id, self._zona(zona_id))
+        pendientes = self._movimientos_pendientes(cliente)
+        orden = {movimiento.id: posicion for posicion, movimiento in enumerate(pendientes)}
+        limites = self._limites_peso()
+
+        rollos_entregados = []
+        for movimiento, texto in self._validar_rollos(rollos, pendientes):
+            rollos_entregados.append({"move": movimiento, **self._revisar_peso(texto, limites)})
+        rollos_entregados.sort(key=lambda rollo: orden[rollo["move"].id])
+
+        productos_entregados = []
+        for producto, cantidad in self._validar_productos(productos, pendientes).items():
+            restante = cantidad
+            asignacion = []
+            for movimiento in pendientes.filtered(lambda m: m.product_id == producto):
+                if movimiento.product_uom.compare(restante, 0.0) <= 0:
+                    break
+                parte = min(restante, movimiento.product_uom_qty)
+                asignacion.append((movimiento, parte))
+                restante -= parte
+            productos_entregados.append({"producto": producto, "cantidad": cantidad, "asignacion": asignacion})
+        productos_entregados.sort(key=lambda linea: orden[linea["asignacion"][0][0].id])
+        return {"cliente": cliente, "rollos": rollos_entregados, "productos": productos_entregados}
+
+    @api.model
+    def _validar_rollos(self, rollos, pendientes):
+        """ [(movimiento, peso tecleado), ...]: cada rollo una sola vez, de peso
+        variable y pendiente de entregar a este cliente. """
+        if not isinstance(rollos, list):
+            raise UserError(_("La entrega trae datos inválidos. Recarga la página."))
+        resultado = []
+        vistos = set()
+        for rollo in rollos:
+            move_id = rollo.get("move_id") if isinstance(rollo, dict) else None
+            if not self._es_entero(move_id) or "peso" not in rollo:
+                raise UserError(_("La entrega trae un rollo inválido. Recarga la página."))
+            if move_id in vistos:
+                raise UserError(_("El mismo rollo viene dos veces en la entrega."))
+            vistos.add(move_id)
+            movimiento = pendientes.filtered(lambda m: m.id == move_id and m.product_id.es_peso_variable)
+            if not movimiento:
+                raise UserError(_(
+                    "Uno de los rollos ya no está pendiente de entregar a este cliente. "
+                    "Recarga la lista e intenta de nuevo."
+                ))
+            resultado.append((movimiento, rollo["peso"]))
+        return resultado
+
+    @api.model
+    def _validar_productos(self, productos, pendientes):
+        """ {producto: cantidad} de los productos que no son de peso variable:
+        cantidades enteras, mayores a cero y sin pasar de lo pendiente. """
+        if not isinstance(productos, list):
+            raise UserError(_("La entrega trae datos inválidos. Recarga la página."))
+        cantidades = {}
+        for linea in productos:
+            producto_id = linea.get("producto_id") if isinstance(linea, dict) else None
+            cantidad = linea.get("cantidad") if isinstance(linea, dict) else None
+            if not self._es_entero(producto_id):
+                raise UserError(_("La entrega trae un producto inválido. Recarga la página."))
+            if not self._es_entero(cantidad) or cantidad < 1:
+                raise UserError(_("Las cantidades deben ser números enteros mayores a cero."))
+            movimientos = pendientes.filtered(
+                lambda m: m.product_id.id == producto_id and not m.product_id.es_peso_variable
+            )
+            if not movimientos:
+                raise UserError(_(
+                    "Uno de los productos ya no está pendiente de entregar a este cliente. "
+                    "Recarga la lista e intenta de nuevo."
+                ))
+            producto = movimientos.product_id
+            if producto in cantidades:
+                raise UserError(_("%(producto)s viene dos veces en la entrega.", producto=producto.display_name))
+            pendiente = sum(movimientos.mapped("product_uom_qty"))
+            if movimientos[0].product_uom.compare(cantidad, pendiente) > 0:
+                raise UserError(_(
+                    "De %(producto)s solo hay %(pendiente)s pendientes. Si quiere más, levanta un "
+                    "pedido nuevo.",
+                    producto=producto.display_name, pendiente=f"{pendiente:g}",
+                ))
+            cantidades[producto] = cantidad
+        return cantidades
+
+    @api.model
+    def _limites_peso(self):
+        """ Límites de peso en kg, de los parámetros del sistema. Solo el
+        administrador puede leer parámetros del sistema, por eso el sudo (solo
+        estas tres claves). """
+        parametros = self.env["ir.config_parameter"].sudo()
+        limites = {}
+        for nombre, clave in PARAMETROS_PESO.items():
+            try:
+                valor = float(parametros.get_param(clave) or "")
+            except ValueError:
+                valor = 0.0
+            if valor <= 0:
+                raise UserError(_(
+                    "Falta configurar el parámetro del sistema %(clave)s (un número de kg mayor a 0).",
+                    clave=clave,
+                ))
+            limites[nombre] = valor
+        return limites
+
+    @api.model
+    def _revisar_peso(self, texto, limites):
+        """ Revisa el peso tecleado de un rollo. Devuelve el peso en kg (o None
+        si no se entiende), el `bloqueo` (texto, o None) y las `advertencias`.
+        Si no trae punto decimal y es de 100 o más, se sugiere que faltó el
+        punto: `sugerencia` = peso / 1000. """
+        revision = {"peso": None, "bloqueo": None, "advertencias": [], "sugerencia": None}
+        encontrado = FORMATO_PESO.match(texto.strip()) if isinstance(texto, str) else None
+        if not encontrado:
+            revision["bloqueo"] = _("Escribe el peso en kg, por ejemplo 1.250.")
+            return revision
+        enteros, decimales = encontrado.groups()
+        if decimales and len(decimales) > DECIMALES_PESO:
+            revision["bloqueo"] = _("El peso lleva máximo 3 decimales.")
+            return revision
+        peso = float_round(float(f"{enteros}.{decimales or 0}"), precision_digits=DECIMALES_PESO)
+        revision["peso"] = peso
+        if decimales is None and peso >= PESO_SIN_PUNTO_SOSPECHOSO:
+            sugerencia = float_round(peso / 1000, precision_digits=DECIMALES_PESO)
+            revision["sugerencia"] = sugerencia
+            revision["advertencias"].append(_("¿Quisiste decir %(peso)s kg?", peso=f"{sugerencia:.3f}"))
+        if peso <= 0:
+            revision["bloqueo"] = _("El peso debe ser mayor a 0 kg.")
+        elif peso > limites["bloqueo_max"]:
+            revision["bloqueo"] = _(
+                "Un rollo no puede pesar más de %(maximo)s kg.", maximo=f"{limites['bloqueo_max']:g}",
+            )
+        elif peso < limites["advertencia_min"]:
+            revision["advertencias"].append(_(
+                "Pesa menos de %(minimo)s kg: revisa que esté bien.", minimo=f"{limites['advertencia_min']:g}",
+            ))
+        elif peso > limites["advertencia_max"]:
+            revision["advertencias"].append(_(
+                "Pesa más de %(maximo)s kg: revisa que esté bien.", maximo=f"{limites['advertencia_max']:g}",
+            ))
+        return revision
+
+    @api.model
+    def _importes_entrega(self, entrega):
+        """ ({id de línea de venta: importe}, total) de lo que se entrega,
+        calculado como lo hará la factura: una línea de factura por línea de venta (rollo:
+        cantidad 1 a peso × precio por kg vigente, que es el que se congela al
+        validar; demás productos: la cantidad entregada al precio de su línea
+        de venta, con su descuento e impuestos) y el motor de impuestos de Odoo
+        con el redondeo de la compañía.
+
+        Las órdenes se agrupan en facturas como lo hace Odoo al facturarlas
+        juntas: por las claves de `_get_invoice_grouping_keys` sobre los
+        valores de `_prepare_invoice` (que solo lee).
+
+        Igual que en la factura, el importe de cada línea se redondea por
+        separado (su subtotal) y el total se redondea una vez por factura; por
+        eso la suma de las líneas puede diferir del total por centavos.
+
+        Los precios, descuentos, impuestos y datos de facturación de las líneas
+        y órdenes de venta se leen con sudo (pueden ser de otro vendedor); solo
+        los de los movimientos que ya pasaron `_preparar_entrega`. """
+        cantidades = defaultdict(float)
+        precios = {}
+        for rollo in entrega["rollos"]:
+            linea = rollo["move"].sale_line_id
+            cantidades[linea] += rollo["move"].product_uom_qty
+            precios[linea] = rollo["peso"] * rollo["move"].product_id.precio_por_kg
+        for producto in entrega["productos"]:
+            for movimiento, cantidad in producto["asignacion"]:
+                cantidades[movimiento.sale_line_id] += cantidad
+        AccountTax = self.env["account.tax"]
+        claves_factura = self.env["sale.order"]._get_invoice_grouping_keys()
+        valores_factura = {}  # orden -> valores de su factura
+        facturas = defaultdict(list)
+        for linea, cantidad in cantidades.items():
+            if not linea:
+                continue  # movimiento agregado a mano, sin línea de venta: no se factura
+            linea_sudo = linea.sudo()
+            orden = linea_sudo.order_id
+            datos_linea = dict(
+                id=linea.id,
+                product_id=linea_sudo.product_id,
+                tax_ids=linea_sudo.tax_ids,
+                price_unit=precios.get(linea, linea_sudo.price_unit),
+                quantity=cantidad,
+                discount=linea_sudo.discount,
+                currency_id=orden.currency_id,
+                partner_id=orden.partner_id,
+            )
+            if orden not in valores_factura:
+                valores_factura[orden] = orden._prepare_invoice()
+            facturas[tuple(valores_factura[orden].get(clave) for clave in claves_factura)].append(datos_linea)
+        importes = {}
+        total = 0.0
+        for lineas_factura in facturas.values():
+            company = self.env["sale.order.line"].browse(lineas_factura[0]["id"]).sudo().company_id
+            currency = lineas_factura[0]["currency_id"]
+            for datos_linea in lineas_factura:
+                # Como account.move.line._compute_totals: cada línea sola.
+                sola = AccountTax._prepare_base_line_for_taxes_computation(None, **datos_linea)
+                AccountTax._add_tax_details_in_base_line(sola, company)
+                AccountTax._round_base_lines_tax_details([sola], company)
+                importes[datos_linea["id"]] = sola["tax_details"]["total_included_currency"]
+            # Como account.move._compute_tax_totals: la factura completa.
+            base_lines = [
+                AccountTax._prepare_base_line_for_taxes_computation(None, **datos_linea)
+                for datos_linea in lineas_factura
+            ]
+            AccountTax._add_tax_details_in_base_lines(base_lines, company)
+            AccountTax._round_base_lines_tax_details(base_lines, company)
+            total += AccountTax._get_tax_totals_summary(base_lines, currency, company)["total_amount_currency"]
+        return importes, self.env.company.currency_id.round(total)
+
+    @api.model
+    def _movimientos_pendientes(self, cliente):
+        """ Movimientos pendientes de las entregas de venta pendientes del
+        cliente, de la orden más antigua (creada primero) a la más nueva. """
+        return self._entregas_pendientes(cliente).move_ids.filtered(
+            lambda m: m.state not in ("done", "cancel")
+            and m.product_uom.compare(m.product_uom_qty, 0.0) > 0
+        ).sorted(lambda m: (m.picking_id.sale_id.id, m.sale_line_id.id or 0, m.id))
 
     @api.model
     def _precio_de_lineas(self, grupo, currency, uom_unidad):
@@ -358,7 +660,8 @@ class DuranCaptura(models.AbstractModel):
         return f"/{producto.uom_id.name}"
 
     @api.model
-    def _formato_precio(self, precio, currency):
-        """ "$85" en lugar de "$ 85": más corto en la pantalla del celular. """
-        texto = format_amount(self.env, precio, currency, trailing_zeroes=False)
+    def _formato_precio(self, precio, currency, centavos=False):
+        """ "$85" en lugar de "$ 85": más corto en la pantalla del celular. Con
+        `centavos`, siempre con sus decimales ("$211.40"), para importes. """
+        texto = format_amount(self.env, precio, currency, trailing_zeroes=centavos)
         return texto.replace(f"{currency.symbol}\N{NO-BREAK SPACE}", currency.symbol, 1)

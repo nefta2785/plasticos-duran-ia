@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Límites del peso de un rollo en el modo Entrega de /captura. Se cambian en
+     Ajustes > Técnico > Parámetros del sistema (modo desarrollador); noupdate
+     para que actualizar el módulo no pise lo que se haya ajustado. -->
+<odoo noupdate="1">
+
+    <!-- Arriba de este peso (kg) el rollo no se puede entregar. -->
+    <record id="parametro_peso_bloqueo_max" model="ir.config_parameter">
+        <field name="key">duran_captura_tianguis.peso_bloqueo_max</field>
+        <field name="value">15</field>
+    </record>
+
+    <!-- Debajo de este peso (kg) se pide confirmar. -->
+    <record id="parametro_peso_advertencia_min" model="ir.config_parameter">
+        <field name="key">duran_captura_tianguis.peso_advertencia_min</field>
+        <field name="value">0.5</field>
+    </record>
+
+    <!-- Arriba de este peso (kg) se pide confirmar. -->
+    <record id="parametro_peso_advertencia_max" model="ir.config_parameter">
+        <field name="key">duran_captura_tianguis.peso_advertencia_max</field>
+        <field name="value">8</field>
+    </record>
+
+</odoo>

@@ -69,3 +69,7 @@ class CapturaTianguis(http.Controller):
     @http.route("/captura/api/entrega/pendiente", type="jsonrpc", auth="user", methods=["POST"])
     def api_entrega_pendiente(self, cliente_id, zona_id):
         return self._captura().get_pendientes_entrega(cliente_id, zona_id)
+
+    @http.route("/captura/api/entrega/vista_previa", type="jsonrpc", auth="user", methods=["POST"])
+    def api_entrega_vista_previa(self, cliente_id, zona_id, rollos, productos):
+        return self._captura().get_vista_previa_entrega(cliente_id, zona_id, rollos, productos)

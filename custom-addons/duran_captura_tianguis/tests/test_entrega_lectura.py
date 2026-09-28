@@ -65,37 +65,6 @@ class TestEntregaLectura(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
     # === Ayudantes para armar los datos === #
 
     @classmethod
-    def _cliente(cls, nombre, zonas):
-        return cls.env["res.partner"].create({"name": nombre, "category_id": [Command.set(zonas.ids)]})
-
-    @classmethod
-    def _confirmada(cls, cliente, lineas, vendedor=None, **vals):
-        """ Orden confirmada (con su entrega), SIN zona, como las creadas desde
-        Odoo. Cada línea: (producto, cantidad) o (producto, cantidad, precio). """
-        orden = cls.env["sale.order"].create({
-            "partner_id": cliente.id,
-            "user_id": vendedor.id if vendedor else False,
-            "order_line": [
-                Command.create({
-                    "product_id": linea[0].id, "product_uom_qty": linea[1],
-                    **({"price_unit": linea[2]} if len(linea) > 2 else {}),
-                })
-                for linea in lineas
-            ],
-            **vals,
-        })
-        orden.action_confirm()
-        return orden
-
-    @classmethod
-    def _validar(cls, picking):
-        for move in picking.move_ids:
-            move.write({"quantity": move.product_uom_qty, "picked": True})
-        picking.button_validate()
-        assert picking.state == "done", picking.state
-        return picking
-
-    @classmethod
     def _devolver(cls, picking):
         asistente = cls.env["stock.return.picking"].with_context(
             active_id=picking.id, active_model="stock.picking",

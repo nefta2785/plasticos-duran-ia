@@ -17,7 +17,10 @@ RUTAS_PEDIDO = (
     "/captura/api/habituales", "/captura/api/enviar",
 )
 # Rutas del modo Entrega: la pantalla todavía no las usa (paso 6).
-RUTAS_ENTREGA = ("/captura/api/entrega/clientes", "/captura/api/entrega/pendiente")
+RUTAS_ENTREGA = (
+    "/captura/api/entrega/clientes", "/captura/api/entrega/pendiente",
+    "/captura/api/entrega/vista_previa",
+)
 RUTAS_API = RUTAS_PEDIDO + RUTAS_ENTREGA
 
 
@@ -68,6 +71,37 @@ class CapturaDatosPrueba:
             "date_order": fields.Datetime.now() - timedelta(days=dias_atras),
         })
         return orden
+
+    @classmethod
+    def _cliente(cls, nombre, zonas):
+        return cls.env["res.partner"].create({"name": nombre, "category_id": [Command.set(zonas.ids)]})
+
+    @classmethod
+    def _confirmada(cls, cliente, lineas, vendedor=None, **vals):
+        """ Orden confirmada (con su entrega), SIN zona, como las creadas desde
+        Odoo. Cada línea: (producto, cantidad) o (producto, cantidad, precio). """
+        orden = cls.env["sale.order"].create({
+            "partner_id": cliente.id,
+            "user_id": vendedor.id if vendedor else False,
+            "order_line": [
+                Command.create({
+                    "product_id": linea[0].id, "product_uom_qty": linea[1],
+                    **({"price_unit": linea[2]} if len(linea) > 2 else {}),
+                })
+                for linea in lineas
+            ],
+            **vals,
+        })
+        orden.action_confirm()
+        return orden
+
+    @classmethod
+    def _validar(cls, picking):
+        for move in picking.move_ids:
+            move.write({"quantity": move.product_uom_qty, "picked": True})
+        picking.button_validate()
+        assert picking.state == "done", picking.state
+        return picking
 
     @classmethod
     def _crear_datos_captura(cls):
@@ -142,6 +176,11 @@ class CapturaHttpMixin:
         """ Parámetros válidos para cada ruta de RUTAS_API. """
         if ruta.endswith("clientes"):
             return {"zona_id": self.zona_con_clientes.id}
+        if ruta.endswith("entrega/vista_previa"):
+            return {
+                "cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id,
+                "rollos": [], "productos": [],
+            }
         if ruta.endswith("entrega/pendiente"):
             return {"cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id}
         if ruta.endswith("habituales"):

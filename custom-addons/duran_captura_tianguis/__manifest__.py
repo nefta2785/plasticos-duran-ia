@@ -17,6 +17,7 @@ Cada entrega confirmada desde la pantalla queda en una bitácora (Ventas >
     "data": [
         "security/security.xml",
         "security/ir.model.access.csv",
+        "data/ir_config_parameter.xml",
         "views/sale_order_views.xml",
         "views/captura_entrega_views.xml",
         "views/captura_templates.xml",
