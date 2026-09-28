@@ -4,7 +4,7 @@ import re
 from odoo import Command
 from odoo.tests import HttpCase, tagged
 
-from .common import GRUPO_CAPTURA, RUTAS_API, CapturaDatosPrueba, CapturaHttpMixin
+from .common import GRUPO_CAPTURA, RUTAS_API, RUTAS_PEDIDO, CapturaDatosPrueba, CapturaHttpMixin
 
 
 @tagged("post_install", "-at_install")
@@ -55,7 +55,7 @@ class TestPaginaYRutas(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn(tipo, response.headers["Content-Type"])
                 if extension == "js":
-                    for ruta in RUTAS_API:
+                    for ruta in RUTAS_PEDIDO:
                         self.assertIn(ruta, response.text)
 
     # === Zonas y clientes === #

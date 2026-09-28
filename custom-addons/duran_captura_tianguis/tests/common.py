@@ -12,10 +12,13 @@ from odoo.addons.base.models import ir_sequence
 from odoo.tests import new_test_user
 
 GRUPO_CAPTURA = "duran_captura_tianguis.group_captura_tianguis"
-RUTAS_API = (
+RUTAS_PEDIDO = (
     "/captura/api/zonas", "/captura/api/clientes", "/captura/api/catalogo",
     "/captura/api/habituales", "/captura/api/enviar",
 )
+# Rutas del modo Entrega: la pantalla todavía no las usa (paso 6).
+RUTAS_ENTREGA = ("/captura/api/entrega/clientes", "/captura/api/entrega/pendiente")
+RUTAS_API = RUTAS_PEDIDO + RUTAS_ENTREGA
 
 
 class CapturaDatosPrueba:
@@ -139,6 +142,8 @@ class CapturaHttpMixin:
         """ Parámetros válidos para cada ruta de RUTAS_API. """
         if ruta.endswith("clientes"):
             return {"zona_id": self.zona_con_clientes.id}
+        if ruta.endswith("entrega/pendiente"):
+            return {"cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id}
         if ruta.endswith("habituales"):
             return {"cliente_id": self.cliente.id}
         if ruta.endswith("enviar"):

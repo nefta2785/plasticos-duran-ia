@@ -159,6 +159,7 @@ node custom-addons/duran_captura_tianguis/tests/pantalla/correr.mjs
 | Validaciones (cantidades, productos, zona, cliente, token) sin dejar órdenes a medias | `test_enviar.py` | Error del servidor |
 | Zona en la orden: vistas, agrupar por Zona, no se copia al duplicar, no se borra si está en uso | `test_zona_y_seguridad.py` | — |
 | Inicio con dos modos: Pedido lleva a Zonas; Entrega aún deshabilitado; Regresar/atrás desde Zonas vuelve al Inicio | — | Inicio |
+| Modo Entrega, rutas de lectura: clientes de la zona con entregas de venta pendientes (sin validadas, canceladas, devoluciones, "Devolución a proveedor" ni salidas sin orden de venta); todas las pendientes sin importar vendedor ni zona de la orden; agrupado por producto de la orden más antigua a la más nueva, rollos uno por uno, marca "sin existencia en sistema", precios (por kg vigente / de la línea de venta); no lee clientes de otra zona ni fuera de zonas | `test_entrega_lectura.py` (sin grupo y sin sesión también en `test_pagina_y_rutas.py`) | — |
 | Bitácora de entregas: token único y con formato, quien captura solo crea y ve las suyas y no las modifica ni borra, el gerente ve todas, vendedor sin grupo no la ve, vistas y menú | `test_bitacora.py` | — |
 
 Pruebas de `duran_peso_variable` (`custom-addons/duran_peso_variable/tests/`):
