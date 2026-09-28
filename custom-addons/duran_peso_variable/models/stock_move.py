@@ -16,6 +16,15 @@ class StockMove(models.Model):
         string="Es peso variable",
         readonly=True,
     )
+    precio_por_kg = fields.Float(
+        string="Precio por kg al entregar",
+        digits="Product Price",
+        readonly=True,
+        copy=False,
+        help="Precio por kg del producto cuando se validó la entrega al cliente. La factura "
+        "usa este precio: si después cambia el precio del producto, lo ya entregado se "
+        "sigue cobrando al precio con el que se entregó.",
+    )
 
     @api.constrains("product_uom_qty", "quantity", "product_id")
     def _check_peso_variable_qty_max_1(self):
@@ -33,3 +42,13 @@ class StockMove(models.Model):
                     "Corrige la cantidad desde la Orden de Venta, no desde la Entrega.",
                     product=move.product_id.display_name,
                 ))
+
+    def _action_done(self, cancel_backorder=False):
+        moves = super()._action_done(cancel_backorder=cancel_backorder)
+        # Solo las salidas al cliente: en devoluciones y cambios el abono se
+        # sigue calculando con el precio vigente (ver duran.cambio.producto).
+        for move in moves.filtered(
+            lambda m: m.es_peso_variable and m.location_dest_usage == "customer"
+        ):
+            move.precio_por_kg = move.product_id.precio_por_kg
+        return moves

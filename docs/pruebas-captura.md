@@ -1,6 +1,8 @@
-# Pruebas del módulo `duran_captura_tianguis`
+# Pruebas de `duran_captura_tianguis` y `duran_peso_variable`
 
-Comandos para actualizar el módulo y correr sus pruebas automatizadas en **duranDEV**.
+Comandos para actualizar los módulos y correr sus pruebas automatizadas en **duranDEV**.
+`duran_captura_tianguis` depende de `duran_peso_variable`: si cambia este último, hay que
+correr las pruebas de los dos.
 Todos se corren desde la carpeta `docker/` del proyecto:
 
 ```bash
@@ -38,6 +40,9 @@ Carga el código Python nuevo. Tarda unos segundos; durante ese tiempo `http://l
 docker compose exec -T odoo sh -c 'odoo -d duranDEV --db_host "$HOST" --db_port "$PORT" --db_user "$USER" --db_password "$PASSWORD" -u duran_captura_tianguis --stop-after-init --no-http'
 ```
 
+Si el cambio fue en `duran_peso_variable`, poner `-u duran_peso_variable` (o
+`-u duran_peso_variable,duran_captura_tianguis` si cambiaron los dos).
+
 Equivale a darle **Actualizar** al módulo en Aplicaciones. Lanza un segundo proceso de Odoo
 dentro del mismo contenedor que aplica los XML y los campos nuevos a duranDEV y **termina solo**
 (`--stop-after-init`). No abre ningún puerto (`--no-http`) ni detiene el servicio normal, que se
@@ -51,7 +56,7 @@ proceso auxiliar cerrándose, no el Odoo de siempre.
 ## 2. Correr las pruebas automatizadas
 
 ```bash
-docker compose exec -T odoo sh -c 'odoo -d duranDEV --db_host "$HOST" --db_port "$PORT" --db_user "$USER" --db_password "$PASSWORD" --test-enable --test-tags /duran_captura_tianguis --stop-after-init --http-port 8070 --max-cron-threads 0'
+docker compose exec -T odoo sh -c 'odoo -d duranDEV --db_host "$HOST" --db_port "$PORT" --db_user "$USER" --db_password "$PASSWORD" --test-enable --test-tags /duran_captura_tianguis,/duran_peso_variable --stop-after-init --http-port 8070 --max-cron-threads 0'
 ```
 
 Cuándo usarlo: **después de cualquier cambio al módulo** (y después de 1a/1b si aplican), y
@@ -59,7 +64,8 @@ antes de cada commit.
 
 Qué hace:
 
-- Lanza un segundo proceso de Odoo que corre solo las pruebas de este módulo (`--test-tags`).
+- Lanza un segundo proceso de Odoo que corre solo las pruebas de los dos módulos (`--test-tags`).
+  Para correr solo uno, dejar solo su nombre en `--test-tags`.
 - Las pruebas de páginas y rutas hacen peticiones HTTP reales, así que ese proceso levanta su
   propio servidor en el puerto **8070**. Es un puerto interno del contenedor: no está publicado
   hacia la Mac ni hacia la red, y no choca con el servicio normal (8069 dentro, 8071 fuera).
@@ -83,7 +89,7 @@ Si algo falla, buscar en la salida las líneas `FAIL:` o `ERROR:`; debajo viene 
 Para ver solo el resumen:
 
 ```bash
-docker compose exec -T odoo sh -c 'odoo -d duranDEV --db_host "$HOST" --db_port "$PORT" --db_user "$USER" --db_password "$PASSWORD" --test-enable --test-tags /duran_captura_tianguis --stop-after-init --http-port 8070 --max-cron-threads 0' 2>&1 | grep -E "FAIL|ERROR|tests when loading"
+docker compose exec -T odoo sh -c 'odoo -d duranDEV --db_host "$HOST" --db_port "$PORT" --db_user "$USER" --db_password "$PASSWORD" --test-enable --test-tags /duran_captura_tianguis,/duran_peso_variable --stop-after-init --http-port 8070 --max-cron-threads 0' 2>&1 | grep -E "FAIL|ERROR|tests when loading"
 ```
 
 ---
@@ -105,7 +111,8 @@ Qué hace:
 - Abre la pantalla en Chrome **sin ventana** (headless), a tamaño de celular (390 × 844).
 - **No usa Odoo ni la base de datos**: arma la página con la plantilla, el CSS y el JS reales
   del módulo, y responde a la pantalla con datos simulados (`tests/pantalla/simulacion.js`).
-- Recorre la pantalla como quien captura (`tests/pantalla/escenario.js`): zonas, zona vacía,
+- Recorre la pantalla como quien captura (`tests/pantalla/escenario.js`): inicio (Pedido /
+  Entrega), zonas, zona vacía,
   clientes, productos, sumar/restar/quitar, confirmación al salir, "Lo de siempre", resumen,
   doble toque, envío sin señal y reintento, error del servidor y pantalla de éxito.
 - Chrome usa un perfil temporal propio: no toca tu Chrome ni sus pestañas.
@@ -128,7 +135,7 @@ Si Chrome no está en la ruta normal de macOS:
 
 ```bash
 cd docker
-docker compose exec -T odoo sh -c 'odoo -d duranDEV --db_host "$HOST" --db_port "$PORT" --db_user "$USER" --db_password "$PASSWORD" --test-enable --test-tags /duran_captura_tianguis --stop-after-init --http-port 8070 --max-cron-threads 0' 2>&1 | grep -E "FAIL|ERROR|tests when loading"
+docker compose exec -T odoo sh -c 'odoo -d duranDEV --db_host "$HOST" --db_port "$PORT" --db_user "$USER" --db_password "$PASSWORD" --test-enable --test-tags /duran_captura_tianguis,/duran_peso_variable --stop-after-init --http-port 8070 --max-cron-threads 0' 2>&1 | grep -E "FAIL|ERROR|tests when loading"
 cd ..
 node custom-addons/duran_captura_tianguis/tests/pantalla/correr.mjs
 ```
@@ -151,6 +158,16 @@ node custom-addons/duran_captura_tianguis/tests/pantalla/correr.mjs
 | Sin duplicados (doble toque, reintento sin señal, token único en la base) | `test_enviar.py`, `test_zona_y_seguridad.py` | Envío |
 | Validaciones (cantidades, productos, zona, cliente, token) sin dejar órdenes a medias | `test_enviar.py` | Error del servidor |
 | Zona en la orden: vistas, agrupar por Zona, no se copia al duplicar, no se borra si está en uso | `test_zona_y_seguridad.py` | — |
+| Inicio con dos modos: Pedido lleva a Zonas; Entrega aún deshabilitado; Regresar/atrás desde Zonas vuelve al Inicio | — | Inicio |
+| Bitácora de entregas: token único y con formato, quien captura solo crea y ve las suyas y no las modifica ni borra, el gerente ve todas, vendedor sin grupo no la ve, vistas y menú | `test_bitacora.py` | — |
+
+Pruebas de `duran_peso_variable` (`custom-addons/duran_peso_variable/tests/`):
+
+| Requisito | Pruebas |
+|---|---|
+| Un rollo por línea, movimiento de rollo máximo 1, factura por peso real de la entrega, la devolución no arrastra el peso | `test_peso_variable.py` |
+| Precio por kg congelado al validar la entrega: la factura lo usa aunque el producto cambie de precio (también al corregir el peso en la factura); entregas antiguas sin precio congelado usan el vigente | `test_precio_congelado.py` |
+| Cambio de producto (rollo y producto normal): abono y rollo nuevo al precio vigente, nota de crédito, factura nueva cobrada | `test_precio_congelado.py` |
 
 ## 6. Qué NO cubren las pruebas automáticas
 

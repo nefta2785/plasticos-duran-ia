@@ -9,6 +9,7 @@
             <xpath expr="//field[@name='move_ids']/list/field[@name='product_uom_qty']" position="after">
                 <field name="es_peso_variable" column_invisible="True"/>
                 <field name="peso_real" string="Peso real (kg)" invisible="not es_peso_variable"/>
+                <field name="precio_por_kg" optional="show" invisible="not es_peso_variable or not precio_por_kg"/>
             </xpath>
         </field>
     </record>

@@ -32,14 +32,32 @@ class SaleOrderLine(models.Model):
         vals = super()._prepare_invoice_line(**optional_values)
         if self.es_peso_variable:
             peso_real = self._get_peso_real_for_invoice()
+            precio_por_kg = self._get_precio_por_kg_for_invoice()
             vals["peso_real"] = peso_real
+            vals["precio_por_kg"] = precio_por_kg
             # `price_unit` es un campo precompute en account.move.line: si va
             # explícito en el create() (como hace el método base con
             # self.price_unit), Odoo lo respeta tal cual y NO dispara el
             # compute, así que hay que recalcularlo aquí mismo para que quede
             # consistente con el peso_real que se está por guardar.
-            vals["price_unit"] = peso_real * self.product_id.precio_por_kg
+            vals["price_unit"] = peso_real * precio_por_kg
         return vals
+
+    def _get_precio_por_kg_for_invoice(self):
+        """ Precio por kg congelado en la Entrega validada (el vigente cuando
+        se entregó el rollo), para que un cambio posterior del precio del
+        producto no altere lo que ya se entregó.
+
+        En notas de crédito por devolución (`qty_to_invoice < 0`) se usa el
+        precio vigente del producto: así lo calcula el Cambio de producto para
+        el abono. También se usa el precio vigente si la Entrega se validó
+        antes de que existiera el precio congelado. """
+        self.ensure_one()
+        if self.qty_to_invoice >= 0:
+            delivery_move = self._get_delivery_move()
+            if delivery_move and delivery_move.precio_por_kg:
+                return delivery_move.precio_por_kg
+        return self.product_id.precio_por_kg
 
     def _get_peso_real_for_invoice(self):
         """ Prioriza el peso real capturado en la Entrega (el que de verdad se
@@ -73,12 +91,18 @@ class SaleOrderLine(models.Model):
         usa el más reciente. Si no hay ninguno, se cae al peso_real capturado
         en la propia línea de venta. """
         self.ensure_one()
-        delivery_moves = self.move_ids.filtered(
-            lambda m: m.state == "done" and m.location_dest_usage == "customer"
-        )
-        if delivery_moves:
-            return delivery_moves.sorted("date", reverse=True)[0].peso_real
+        delivery_move = self._get_delivery_move()
+        if delivery_move:
+            return delivery_move.peso_real
         return self.peso_real
+
+    def _get_delivery_move(self):
+        """ Movimiento de salida al cliente validado más reciente de la línea
+        (ver `_get_peso_real_delivered`). """
+        self.ensure_one()
+        return self.move_ids.filtered(
+            lambda m: m.state == "done" and m.location_dest_usage == "customer"
+        ).sorted("date", reverse=True)[:1]
 
     @api.depends_context("duran_cambio_producto_label")
     def _compute_display_name(self):
