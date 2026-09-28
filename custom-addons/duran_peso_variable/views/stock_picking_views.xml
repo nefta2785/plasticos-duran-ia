@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_picking_form_peso_variable" model="ir.ui.view">
+        <field name="name">stock.picking.form.peso.variable</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.view_picking_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='move_ids']/list/field[@name='product_uom_qty']" position="after">
+                <field name="es_peso_variable" column_invisible="True"/>
+                <field name="peso_real" string="Peso real (kg)" invisible="not es_peso_variable"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

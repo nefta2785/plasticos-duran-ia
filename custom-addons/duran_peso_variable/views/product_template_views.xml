@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="product_template_form_view_peso_variable" model="ir.ui.view">
+        <field name="name">product.template.form.peso.variable</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_form_view"/>
+        <field name="arch" type="xml">
+            <group name="group_standard_price" position="after">
+                <group name="group_peso_variable">
+                    <field name="es_peso_variable"/>
+                    <field name="precio_por_kg" invisible="not es_peso_variable"/>
+                    <field name="peso_referencia" invisible="es_peso_variable"/>
+                </group>
+            </group>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_order_form_peso_variable" model="ir.ui.view">
+        <field name="name">sale.order.form.peso.variable</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='order_line']/list/field[@name='price_unit']" position="before">
+                <field name="es_peso_variable" column_invisible="True"/>
+                <field name="peso_real" string="Peso real (kg)" invisible="not es_peso_variable"/>
+            </xpath>
+            <button id="create_invoice_percentage" position="after">
+                <button string="Cambio de producto" name="%(action_duran_cambio_producto)d"
+                        type="action" invisible="state != 'sale'"
+                        context="{'default_order_id': id}"/>
+            </button>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_duran_cambio_producto_form" model="ir.ui.view">
+        <field name="name">duran.cambio.producto.form</field>
+        <field name="model">duran.cambio.producto</field>
+        <field name="arch" type="xml">
+            <form string="Cambio de producto">
+                <field name="currency_id" invisible="1"/>
+                <field name="es_peso_variable" invisible="1"/>
+                <field name="peso_referencia" invisible="1"/>
+                <field name="order_id" invisible="1"/>
+                <field name="hay_lineas_elegibles" invisible="1"/>
+                <div class="alert alert-warning" role="alert" invisible="hay_lineas_elegibles">
+                    <p>No hay líneas para cambiar en esta orden. Motivo por línea:</p>
+                    <field name="lineas_no_elegibles_msg" nolabel="1" readonly="1" widget="text"/>
+                </div>
+                <group invisible="not hay_lineas_elegibles">
+                    <field name="sale_line_id" context="{'duran_cambio_producto_label': True}"
+                           options="{'no_create': True, 'no_create_edit': True, 'no_open': True, 'no_quick_create': True}"/>
+                    <field name="product_id" readonly="1"/>
+                </group>
+                <group string="Pesos" invisible="not hay_lineas_elegibles">
+                    <field name="peso_devuelto"/>
+                    <field name="peso_nuevo" invisible="not es_peso_variable" required="es_peso_variable"/>
+                </group>
+                <group string="Resumen (estimado)" invisible="not hay_lineas_elegibles">
+                    <field name="monto_cobro_estimado"/>
+                    <field name="monto_abono_estimado"/>
+                    <field name="monto_diferencia_estimada"/>
+                </group>
+                <group string="Cobro" invisible="not hay_lineas_elegibles">
+                    <field name="cobra_ahora"/>
+                    <field name="journal_id" invisible="not cobra_ahora" required="cobra_ahora"/>
+                </group>
+                <footer>
+                    <button name="action_confirm" string="Confirmar cambio" type="object"
+                            class="btn-primary" invisible="not hay_lineas_elegibles"/>
+                    <button string="Cancelar" special="cancel" class="btn-secondary"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_duran_cambio_producto" model="ir.actions.act_window">
+        <field name="name">Cambio de producto</field>
+        <field name="res_model">duran.cambio.producto</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

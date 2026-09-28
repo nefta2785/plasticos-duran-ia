@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="view_move_form_peso_variable" model="ir.ui.view">
+        <field name="name">account.move.form.peso.variable</field>
+        <field name="model">account.move</field>
+        <field name="inherit_id" ref="account.view_move_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='invoice_line_ids']/list[@name='journal_items']/field[@name='price_unit']" position="before">
+                <field name="es_peso_variable" column_invisible="True"/>
+                <field name="peso_real" string="Peso real (kg)" invisible="not es_peso_variable"/>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>
