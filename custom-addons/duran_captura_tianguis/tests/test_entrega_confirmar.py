@@ -241,11 +241,13 @@ class TestEntregaConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
     def test_doble_envio_con_el_mismo_token(self):
         orden = self._confirmada(self.cliente, [(self.pieza, 3)])
         params = self._params(productos=[(self.pieza, 2)])
+        bitacora_antes = self.env["duran.captura.entrega"].search_count([])  # la base puede tener entregas reales
         primero = self._resultado(RUTA_CONFIRMAR, params)
         segundo = self._resultado(RUTA_CONFIRMAR, params)
         self.assertTrue(segundo["ya_existia"])
         self.assertEqual({**primero, "ya_existia": True}, segundo)
-        self.assertEqual(self.env["duran.captura.entrega"].search_count([]), 1)
+        self.assertEqual(self.env["duran.captura.entrega"].search_count([]), bitacora_antes + 1)
+        self.assertEqual(self.env["duran.captura.entrega"].search_count([("token", "=", params["token"])]), 1)
         self.assertEqual(len(orden.picking_ids), 1)
         self.assertEqual(self._movimientos(orden).quantity, 2.0, "Validada una sola vez")
 

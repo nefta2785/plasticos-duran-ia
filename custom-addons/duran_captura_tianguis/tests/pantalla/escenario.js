@@ -66,9 +66,11 @@ async function pasoProductos() {
     check("Productos: precio c/u", tarjeta(409).querySelector(".producto-precio").textContent, "$325 c/u");
     check("Productos: sin cantidad no hay − 1 ni Quitar", tarjeta(440).querySelectorAll(".btn-restar,.btn-quitar").length, 0);
     check("Productos: pedido vacío, botón de abajo deshabilitado", [txt("#pedido-conteo"), q("#btn-pedido").disabled], ["Pedido vacío", true]);
+    check("Pedido vacío: recargar no pregunta", pideConfirmarAlSalir(), false);
 
     await tocarProducto(440, 3);
     check("3 toques = 3 kg", cantidad(440), "3 kg");
+    check("Con pedido: recargar la página pregunta antes", pideConfirmarAlSalir(), true);
     check(
         "Con cantidad aparecen − 1 y Quitar",
         [...tarjeta(440).querySelectorAll(".producto-controles .btn")].map((b) => b.textContent),
@@ -383,8 +385,15 @@ async function pasoEntregaLista() {
         [false, true, false, true]
     );
     check("Lista: la barra invita a revisar", [txt("#pedido-conteo"), txt("#pedido-accion")], ["Se lleva 4 de 4 renglones", "Revisar entrega ›"]);
+    check("Entrega sin capturar nada: recargar no pregunta", pideConfirmarAlSalir(), false);
 
     // Productos normales: arranca en lo pendiente; "−" se detiene en 1.
+    renglon("p440").querySelector(".btn-menos").click();
+    await espera(5);
+    check("Cantidad cambiada: recargar pregunta antes", pideConfirmarAlSalir(), true);
+    renglon("p440").querySelector(".btn-mas").click();
+    await espera(5);
+    check("Cantidad de vuelta a lo pendiente: recargar no pregunta", pideConfirmarAlSalir(), false);
     check("Cantidad arranca en lo pendiente, «+» deshabilitado", [cantidadEntrega("p440"), renglon("p440").querySelector(".btn-mas").disabled], ["3 kg", true]);
     renglon("p440").querySelector(".btn-menos").click();
     await espera(5);
@@ -408,6 +417,7 @@ async function pasoEntregaLista() {
     // Eco del peso.
     await escribirPeso(101, "1,250");
     check("Eco: peso interpretado e importe", ecoDe(101), "1.250 kg · $106.25");
+    check("Con un peso escrito: recargar la página pregunta antes", pideConfirmarAlSalir(), true);
     check("Al escribir se quita la marca de falta", mensajeDe("m101"), null);
     await escribirPeso(101, "1.2.5");
     check("Eco: peso no válido", ecoDe(101), "Peso no válido");
@@ -530,6 +540,7 @@ async function pasoEntregaConfirmar() {
     );
     check("Éxito: botones", qa(".lista .btn").map((b) => b.textContent), ["Siguiente cliente de Bosques", "Cambiar de zona"]);
     check("Éxito: sin barra", q("#barra-pedido").hidden, true);
+    check("Entrega confirmada: recargar ya no pregunta", pideConfirmarAlSalir(), false);
     boton("Siguiente cliente de Bosques").click();
     await espera(120);
     check("Siguiente cliente: clientes con pendientes de la zona", [txt("#titulo"), txt("#subtitulo")], ["Bosques", "Zona"]);
@@ -547,6 +558,7 @@ async function pasoEntregaAlgoMasYNada() {
         [txt("#titulo"), q("#categorias").hidden, nombresPestanas()[0]],
         ["Cliente con historial", false, "⭐ Lo de siempre"]
     );
+    check("Solo «No se lo llevó» también cuenta como capturado", pideConfirmarAlSalir(), true);
     await regresar();
     check(
         "Regresar: vuelve a la entrega con lo capturado",

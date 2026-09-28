@@ -248,7 +248,8 @@
     }
 
     function avisarAntesDeSalir(evento) {
-        if (estado.pedido.size) {
+        // Recargar o cerrar la página perdería el pedido o lo capturado de una entrega.
+        if (estado.pedido.size || hayEntregaSinConfirmar()) {
             evento.preventDefault();
             evento.returnValue = "";
         }
@@ -859,6 +860,20 @@
 
     function totalRenglones(captura) {
         return rollosPendientes(captura).length + productosNormales(captura).length;
+    }
+
+    function hayEntregaSinConfirmar() {
+        // Algún peso escrito, "No se lo llevó" o cantidad cambiada sin confirmar.
+        for (const captura of capturas.values()) {
+            const conPeso = [...captura.pesos.values()].some((texto) => texto.trim());
+            const cantidadCambiada =
+                captura.pendiente &&
+                productosNormales(captura).some((producto) => captura.cantidades.get(producto.id) !== producto.cantidad);
+            if (conPeso || captura.noLlevo.size || cantidadCambiada) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function capturaCambiada(captura) {

@@ -183,6 +183,7 @@ class TestEntregaVistaPrevia(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         campos = ["quantity", "picked", "peso_real", "precio_por_kg", "state"]
         antes = movimientos.read(campos)
         facturas_antes = self.env["account.move"].search_count([])
+        bitacora_antes = self.env["duran.captura.entrega"].search_count([])  # la base puede tener entregas reales
         self.env.flush_all()
         escrituras = []
         execute = Cursor.execute
@@ -200,7 +201,7 @@ class TestEntregaVistaPrevia(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         movimientos.invalidate_recordset()
         self.assertEqual(movimientos.read(campos), antes)
         self.assertEqual(self.env["account.move"].search_count([]), facturas_antes)
-        self.assertFalse(self.env["duran.captura.entrega"].search([]))
+        self.assertEqual(self.env["duran.captura.entrega"].search_count([]), bitacora_antes)
 
     # === Validaciones que rechazan === #
 

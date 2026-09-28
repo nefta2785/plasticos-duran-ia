@@ -263,6 +263,14 @@ async function escribirPeso(moveId, texto) {
     await espera(5);
 }
 
+function pideConfirmarAlSalir() {
+    // Lo que hace el navegador al recargar o cerrar: si la página cancela el
+    // evento, pregunta antes de salir.
+    const evento = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(evento);
+    return evento.defaultPrevented;
+}
+
 async function responderModal(si) {
     q(si ? "#modal-si" : "#modal-no").click();
     await espera(150);
