@@ -192,6 +192,25 @@ button {
     text-align: center;
 }
 
+/* === Inicio: un botón grande por modo === */
+
+.btn-modo {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 96px;
+}
+.btn-modo:disabled {
+    border-style: dashed;
+    color: var(--texto-suave);
+    cursor: default;
+}
+.btn-modo:disabled:active { background: var(--fondo); }
+.modo-icono { flex: none; font-size: 36px; }
+.modo-textos { display: flex; flex-direction: column; }
+.modo-nombre { font-size: 26px; font-weight: 800; }
+.modo-detalle { font-size: 18px; font-weight: 600; }
+
 /* === Productos === */
 
 .producto {

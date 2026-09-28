@@ -110,6 +110,7 @@ const txt = (selector) => (q(selector) ? q(selector).textContent.trim() : null);
 const boton = (texto) => qa("button").find((b) => b.textContent.trim() === texto && b.offsetParent !== null);
 const pestana = (nombre) => qa(".categoria").find((b) => b.firstChild.textContent === nombre);
 const nombresPestanas = () => qa(".categoria").map((b) => b.firstChild.textContent);
+const modo = (nombre) => qa(".btn-modo").find((b) => b.querySelector(".modo-nombre").textContent === nombre);
 const tarjeta = (id) => q(`[data-producto="${id}"]`);
 const cantidad = (id) => {
     const c = tarjeta(id) && tarjeta(id).querySelector(".producto-cantidad");

@@ -2,9 +2,34 @@
  * servidor simulado (simulacion.js). Cada check() es una verificación; al
  * final se escriben todas en <pre id="resultado-prueba"> para correr.mjs. */
 
+async function pasoInicio() {
+    check("Inicio: título", txt("#titulo"), "Captura");
+    check("Inicio: botón superior dice Salir", txt("#btn-regresar"), "‹ Salir");
+    check("Inicio: pregunta", txt(".pregunta"), "¿Qué vas a hacer?");
+    check(
+        "Inicio: dos modos, Pedido y Entrega",
+        qa(".btn-modo").map((b) => [b.querySelector(".modo-nombre").textContent, b.querySelector(".modo-detalle").textContent]),
+        [["Pedido", "Levantar un pedido nuevo"], ["Entrega", "Próximamente"]]
+    );
+    check("Inicio: sin barra de pedido ni pestañas", [q("#barra-pedido").hidden, q("#categorias").hidden], [true, true]);
+    check("Inicio: Entrega todavía deshabilitado", modo("Entrega").disabled, true);
+    modo("Entrega").click();
+    await espera(80);
+    check("Inicio: tocar Entrega no hace nada ni llama al servidor", [txt("#titulo"), llamadas.length], ["Captura", 0]);
+    check("Inicio: el modo Pedido está habilitado", modo("Pedido").disabled, false);
+
+    modo("Pedido").click();
+    await espera(80);
+    check("Pedido: lleva a Zonas", [txt("#titulo"), txt("#subtitulo")], ["Zonas", "Pedido"]);
+    await regresar();
+    check("Regresar desde Zonas vuelve al Inicio", [txt("#titulo"), txt("#btn-regresar")], ["Captura", "‹ Salir"]);
+    modo("Pedido").click();
+    await espera(80);
+}
+
 async function pasoZonas() {
     check("Zonas: título", txt("#titulo"), "Zonas");
-    check("Zonas: botón superior dice Salir", txt("#btn-regresar"), "‹ Salir");
+    check("Zonas: botón superior dice Regresar", txt("#btn-regresar"), "‹ Regresar");
     check("Zonas: un botón por zona", qa(".lista .btn").map((b) => b.textContent), ["Bosques", "Guadalupana"]);
     check("Zonas: sin barra de pedido", q("#barra-pedido").hidden, true);
 
@@ -120,6 +145,11 @@ async function pasoConfirmarAntesDeVaciar() {
     check("Regresar con pedido vacío no pregunta", [q("#modal").hidden, txt("#titulo")], [true, "Bosques"]);
     await regresar();
     check("Regresar desde clientes vuelve a zonas", txt("#titulo"), "Zonas");
+    history.back(); // atrás del celular desde Zonas
+    await espera(120);
+    check("Atrás desde Zonas vuelve al Inicio", txt("#titulo"), "Captura");
+    modo("Pedido").click();
+    await espera(80);
 }
 
 async function pasoLoDeSiempre() {
@@ -300,6 +330,7 @@ async function pasoEnviar() {
 window.addEventListener("load", async () => {
     try {
         await espera(80);
+        await pasoInicio();
         await pasoZonas();
         await pasoClientes();
         await pasoProductos();

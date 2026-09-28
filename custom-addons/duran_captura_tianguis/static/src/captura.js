@@ -1,4 +1,5 @@
-/* Captura tianguis: Zona → Cliente → Productos, con el pedido en memoria.
+/* Captura tianguis: Inicio (Pedido / Entrega) → Zona → Cliente → Productos,
+ * con el pedido en memoria.
  *
  * JavaScript sin frameworks. Los datos vienen de las rutas jsonrpc de
  * controllers/main.py. Todo texto que viene de Odoo se pinta con textContent
@@ -29,7 +30,8 @@
     };
 
     const estado = {
-        pantalla: "zonas", // "zonas" | "clientes" | "productos" | "resumen" | "enviado"
+        pantalla: "inicio", // "inicio" | "zonas" | "clientes" | "productos" | "resumen" | "enviado"
+        modo: null, // "pedido" (el modo "entrega" todavía no está disponible)
         zona: null, // {id, nombre}
         cliente: null, // {id, nombre}
         categoriaId: null, // pestaña activa: id de categoría o PESTANA_HABITUALES
@@ -163,6 +165,7 @@
     function fotoHistorial() {
         return {
             pantalla: estado.pantalla,
+            modo: estado.modo,
             zona: estado.zona,
             cliente: estado.cliente,
             envio: estado.pantalla === "enviado" ? estado.envio : null,
@@ -176,7 +179,7 @@
     }
 
     async function alMoverseEnHistorial(evento) {
-        const destino = evento.state || { pantalla: "zonas", zona: null, cliente: null };
+        const destino = evento.state || { pantalla: "inicio", modo: null, zona: null, cliente: null };
         if (confirmando || estado.enviando) {
             // "Atrás" mientras se pregunta o mientras se envía: se queda aquí.
             history.pushState(fotoHistorial(), "");
@@ -205,6 +208,7 @@
         }
         Object.assign(estado, {
             pantalla: destino.pantalla,
+            modo: destino.modo || null,
             zona: destino.zona,
             cliente: destino.cliente,
             envio: destino.envio || null,
@@ -216,7 +220,7 @@
         if (estado.enviando) {
             return;
         }
-        if (estado.pantalla === "zonas") {
+        if (estado.pantalla === "inicio") {
             window.location.href = "/odoo";
         } else if (estado.pantalla === "enviado") {
             irA("clientes", { cliente: null }); // al siguiente cliente de la zona
@@ -281,11 +285,13 @@
     }
 
     function dibujar() {
-        ui.regresar.textContent = estado.pantalla === "zonas" ? "‹ Salir" : "‹ Regresar";
+        ui.regresar.textContent = estado.pantalla === "inicio" ? "‹ Salir" : "‹ Regresar";
         ui.categorias.hidden = estado.pantalla !== "productos";
         ui.barraPedido.hidden = !PANTALLAS_PEDIDO.includes(estado.pantalla);
         window.scrollTo(0, 0);
-        if (estado.pantalla === "zonas") {
+        if (estado.pantalla === "inicio") {
+            dibujarInicio();
+        } else if (estado.pantalla === "zonas") {
             dibujarZonas();
         } else if (estado.pantalla === "clientes") {
             dibujarClientes();
@@ -298,10 +304,40 @@
         }
     }
 
+    // === Pantalla: Inicio ===
+
+    function botonModo(icono, nombre, detalle, alTocar) {
+        return el(
+            "button",
+            { type: "button", class: "btn btn-modo", disabled: alTocar ? null : "disabled", onclick: alTocar },
+            el("span", { class: "modo-icono", "aria-hidden": "true", text: icono }),
+            el(
+                "span",
+                { class: "modo-textos" },
+                el("span", { class: "modo-nombre", text: nombre }),
+                el("span", { class: "modo-detalle", text: detalle })
+            )
+        );
+    }
+
+    function dibujarInicio() {
+        ponerTitulo("Captura");
+        nuevaVista();
+        mostrar(
+            el("p", { class: "pregunta", text: "¿Qué vas a hacer?" }),
+            lista([
+                botonModo("📝", "Pedido", "Levantar un pedido nuevo", () =>
+                    irA("zonas", { modo: "pedido", zona: null, cliente: null })
+                ),
+                botonModo("🚚", "Entrega", "Próximamente", null),
+            ])
+        );
+    }
+
     // === Pantalla: Zonas ===
 
     async function dibujarZonas() {
-        ponerTitulo("Zonas");
+        ponerTitulo("Zonas", "Pedido");
         const vista = nuevaVista();
         mostrar(aviso("Cargando zonas…"));
         let zonas;
