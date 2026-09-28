@@ -67,6 +67,19 @@
         return `${n} ${n === 1 ? uno : varios}`;
     }
 
+    function totalPiezas(productos) {
+        // Suma de cantidades: 2 rollos + 3 kg = 5 productos.
+        return productos.reduce((total, p) => total + (estado.pedido.get(p.id) || 0), 0);
+    }
+
+    function totalPedido() {
+        let total = 0;
+        for (const cantidad of estado.pedido.values()) {
+            total += cantidad;
+        }
+        return total;
+    }
+
     function lista(nodos) {
         return el("ul", { class: "lista" }, ...nodos.map((nodo) => el("li", {}, nodo)));
     }
@@ -153,7 +166,7 @@
         if (dejaElPedido && estado.pedido.size) {
             const vaciar = await confirmar(
                 `¿Vaciar el pedido de ${estado.cliente.nombre}? ` +
-                    `Tiene ${plural(estado.pedido.size, "producto", "productos")} sin enviar.`,
+                    `Tiene ${plural(totalPedido(), "producto", "productos")} sin enviar.`,
                 "Sí, vaciar el pedido",
                 "No, seguir con el pedido"
             );
@@ -385,7 +398,7 @@
     function dibujarCategorias(centrarActiva) {
         ui.categorias.replaceChildren(
             ...pestanas().map((categoria) => {
-                const enPedido = categoria.productos.filter((p) => estado.pedido.has(p.id)).length;
+                const enPedido = totalPiezas(categoria.productos);
                 return el(
                     "button",
                     {
@@ -499,7 +512,7 @@
     }
 
     function actualizarPedido() {
-        const productos = estado.pedido.size;
+        const productos = totalPedido();
         ui.pedidoConteo.textContent = productos
             ? `${plural(productos, "producto", "productos")} en el pedido`
             : "Pedido vacío";
