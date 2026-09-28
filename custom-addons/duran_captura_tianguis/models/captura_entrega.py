@@ -44,7 +44,11 @@ class CapturaEntrega(models.Model):
     )
     currency_id = fields.Many2one(related="company_id.currency_id")
     picking_ids = fields.Many2many("stock.picking", string="Entregas", readonly=True)
-    order_ids = fields.Many2many("sale.order", string="Órdenes de venta", readonly=True)
+    order_ids = fields.Many2many(
+        "sale.order", string="Órdenes de venta", compute="_compute_order_ids", store=True,
+        help="Órdenes de las entregas. Se calcula (como superusuario, igual que cualquier campo "
+        "calculado guardado) porque pueden ser de otro vendedor, que quien captura no puede leer.",
+    )
     linea_ids = fields.One2many("duran.captura.entrega.linea", "entrega_id", string="Productos", readonly=True)
     total = fields.Monetary(
         string="Total (informativo)",
@@ -58,6 +62,11 @@ class CapturaEntrega(models.Model):
         "UNIQUE (token)",
         "Esta entrega de la captura ya se había registrado.",
     )
+
+    @api.depends("picking_ids.sale_id")
+    def _compute_order_ids(self):
+        for entrega in self:
+            entrega.order_ids = entrega.picking_ids.sale_id
 
     @api.constrains("token")
     def _check_formato_token(self):
@@ -94,7 +103,7 @@ class CapturaEntregaLinea(models.Model):
     cantidad = fields.Float(string="Cantidad", digits="Product Unit")
     peso_real = fields.Float(string="Peso real (kg)", digits=(16, 3))
     precio_unitario = fields.Float(
-        string="Precio", digits="Product Price",
+        string="Precio", min_display_digits="Product Price",
         help="Precio por kg en productos de peso variable; precio por unidad en los demás.",
     )
     importe = fields.Monetary(string="Importe")

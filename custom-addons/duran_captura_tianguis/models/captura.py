@@ -2,6 +2,8 @@ import re
 from collections import defaultdict
 from datetime import timedelta
 
+from markupsafe import Markup
+
 from odoo import Command, _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import float_round, format_amount
@@ -98,6 +100,8 @@ class DuranCaptura(models.AbstractModel):
                 ("order_id.date_order", ">=", desde),
                 ("display_type", "=", False),
                 ("product_id", "!=", False),
+                # Líneas bajadas a 0 al entregar (el cliente no se lo llevó).
+                ("product_uom_qty", ">", 0),
             ],
             groupby=["product_id", "order_id"],
             aggregates=["product_uom_qty:sum"],
@@ -219,7 +223,7 @@ class DuranCaptura(models.AbstractModel):
                 precio = producto.precio_por_kg
             else:
                 precio = precio_linea.get(movimiento.sale_line_id.id)
-            reservada = movimiento.quantity if movimiento.state in ("assigned", "partially_available") else 0.0
+            reservada = self._cantidad_reservada(movimiento)
             grupo = productos.setdefault(producto.id, {
                 **self._get_producto_vals(producto, currency, uom_unidad),
                 "movimientos": [],
@@ -306,13 +310,19 @@ class DuranCaptura(models.AbstractModel):
         }
 
     @api.model
-    def _preparar_entrega(self, cliente_id, zona_id, rollos, productos):
+    def _preparar_entrega(self, cliente_id, zona_id, rollos, productos, movimientos_vistos=None):
         """ Valida lo que se va a entregar (mismas reglas para la vista previa
         y para la confirmación) y lo ordena de la orden más antigua a la más
         nueva. La cantidad de un producto se reparte entre sus movimientos
-        pendientes empezando por la orden más antigua. """
+        pendientes empezando por la orden más antigua.
+
+        Con `movimientos_vistos` (confirmación) solo se consideran los
+        movimientos que mostró la pantalla, y se rechaza si desde entonces
+        alguno dejó de estar pendiente o si en sus entregas apareció otro. """
         cliente = self._cliente_en_zona(cliente_id, self._zona(zona_id))
         pendientes = self._movimientos_pendientes(cliente)
+        if movimientos_vistos is not None:
+            pendientes = self._validar_movimientos_vistos(movimientos_vistos, pendientes)
         orden = {movimiento.id: posicion for posicion, movimiento in enumerate(pendientes)}
         limites = self._limites_peso()
 
@@ -333,7 +343,234 @@ class DuranCaptura(models.AbstractModel):
                 restante -= parte
             productos_entregados.append({"producto": producto, "cantidad": cantidad, "asignacion": asignacion})
         productos_entregados.sort(key=lambda linea: orden[linea["asignacion"][0][0].id])
-        return {"cliente": cliente, "rollos": rollos_entregados, "productos": productos_entregados}
+        return {
+            "cliente": cliente,
+            "movimientos": pendientes,
+            "rollos": rollos_entregados,
+            "productos": productos_entregados,
+        }
+
+    @api.model
+    def _validar_movimientos_vistos(self, movimientos_vistos, pendientes):
+        """ Los movimientos que mostró la pantalla, que deben seguir pendientes
+        y ser todos los pendientes de sus entregas. """
+        if (
+            not isinstance(movimientos_vistos, list)
+            or not movimientos_vistos
+            or not all(self._es_entero(move_id) for move_id in movimientos_vistos)
+        ):
+            raise UserError(_("La entrega trae datos inválidos. Recarga la página."))
+        vistos = pendientes.filtered(lambda m: m.id in set(movimientos_vistos))
+        nuevos = pendientes.filtered(lambda m: m.picking_id in vistos.picking_id) - vistos
+        if len(vistos) != len(set(movimientos_vistos)) or nuevos:
+            raise UserError(_(
+                "Las entregas de este cliente cambiaron desde que se cargaron (alguien más las "
+                "validó, canceló o modificó). Regresa y vuelve a abrir al cliente."
+            ))
+        return vistos
+
+    @api.model
+    def confirmar_entrega(self, cliente_id, zona_id, rollos, productos, movimientos_vistos, token):
+        """ Confirma la entrega al cliente en una sola transacción: valida sus
+        entregas con los pesos y cantidades entregados, cancela lo no entregado
+        sin backorder, baja la cantidad pedida de las líneas de venta a lo
+        entregado y registra la bitácora. Si algo falla, no queda nada.
+
+        Mismos parámetros que `get_vista_previa_entrega`, más:
+        :param movimientos_vistos: ids de TODOS los movimientos que mostró la
+            pantalla (ruta de pendientes); solo esas entregas se tocan.
+        :param token: identificador de esta entrega generado por la pantalla.
+            Si ya hay una entrega registrada con ese token (doble toque,
+            reintento sin señal), se devuelve esa en lugar de repetirla. """
+        token = self._validar_token(token, _("la entrega"))
+        ya_registrada = self.env["duran.captura.entrega"].search([("token", "=", token)], limit=1)
+        if ya_registrada:
+            return self._resultado_entrega(ya_registrada, ya_existia=True)
+
+        entrega = self._preparar_entrega(cliente_id, zona_id, rollos, productos, movimientos_vistos)
+        bloqueados = [rollo for rollo in entrega["rollos"] if rollo["bloqueo"]]
+        if bloqueados:
+            raise UserError(_(
+                "Corrige el peso de estos rollos antes de confirmar: %(rollos)s",
+                rollos="; ".join(
+                    f"{rollo['move'].product_id.display_name}: {rollo['bloqueo']}" for rollo in bloqueados
+                ),
+            ))
+        importes, total = self._importes_entrega(entrega)
+
+        movimientos = entrega["movimientos"]
+        pedida = {movimiento: movimiento.product_uom_qty for movimiento in movimientos}
+        sin_existencia = {
+            movimiento for movimiento in movimientos
+            if movimiento.product_uom.compare(self._cantidad_reservada(movimiento), movimiento.product_uom_qty) < 0
+        }
+        entregada = defaultdict(float)
+        pesos = {}
+        for rollo in entrega["rollos"]:
+            entregada[rollo["move"]] = rollo["move"].product_uom_qty
+            pesos[rollo["move"]] = rollo["peso"]
+        for producto in entrega["productos"]:
+            for movimiento, cantidad in producto["asignacion"]:
+                entregada[movimiento] += cantidad
+
+        # 1) Cantidades: lo no entregado en 0 y sin marcar (se cancela al validar).
+        no_entregados = movimientos.filtered(lambda m: m not in entregada)
+        no_entregados.write({"quantity": 0, "picked": False})
+        for movimiento, cantidad in entregada.items():
+            valores = {"quantity": cantidad, "picked": True}
+            if movimiento in pesos:
+                valores["peso_real"] = pesos[movimiento]
+            movimiento.write(valores)
+
+        # 2) Validar sin backorder (como el botón nativo "Sin backorder" del
+        #    asistente de backorder, pero sin su actividad), o cancelar la
+        #    entrega completa si no se entregó nada de ella.
+        entregas = movimientos.picking_id
+        for picking in entregas:
+            if any(movimiento in entregada for movimiento in movimientos & picking.move_ids):
+                picking.with_context(
+                    skip_backorder=True, picking_ids_not_to_backorder=picking.ids,
+                ).button_validate()
+                if picking.state != "done":
+                    raise UserError(_("La entrega %(folio)s no se pudo validar.", folio=picking.name))
+            else:
+                picking.action_cancel()
+                if picking.state != "cancel":
+                    raise UserError(_("La entrega %(folio)s no se pudo cancelar.", folio=picking.name))
+            self._nota_entrega(picking, movimientos & picking.move_ids, pedida, entregada, sin_existencia)
+
+        # 3) La cantidad pedida baja a lo entregado.
+        self._bajar_cantidad_pedida(movimientos.sale_line_id)
+
+        # 4) Bitácora.
+        registro = self.env["duran.captura.entrega"].create({
+            "token": token,
+            "partner_id": entrega["cliente"].id,
+            "zona_id": int(zona_id),
+            "picking_ids": [Command.set(entregas.ids)],
+            "total": total,
+            "linea_ids": self._lineas_bitacora(entrega, importes, sin_existencia),
+        })
+        return self._resultado_entrega(registro, ya_existia=False)
+
+    @api.model
+    def _cantidad_reservada(self, movimiento):
+        return movimiento.quantity if movimiento.state in ("assigned", "partially_available") else 0.0
+
+    @api.model
+    def _nota_entrega(self, picking, movimientos, pedida, entregada, sin_existencia):
+        """ Nota (sin actividad) en la entrega cuando se entregó menos de lo
+        pedido o algo sin existencia en sistema. """
+        menos = [m for m in movimientos if m.product_uom.compare(entregada.get(m, 0.0), pedida[m]) < 0]
+        sin_stock = [m for m in movimientos if m in sin_existencia and m in entregada]
+        if not menos and not sin_stock:
+            return
+        cuerpo = Markup("<p>%s</p>") % _("Entrega registrada desde la captura del tianguis.")
+        if picking.state == "cancel":
+            cuerpo += Markup("<p>%s</p>") % _("El cliente no se llevó nada: se canceló la entrega completa.")
+        elif menos:
+            cuerpo += Markup("<p>%s</p><ul>") % _("Se entregó menos de lo pedido; lo demás se canceló, sin backorder:")
+            for movimiento in menos:
+                cuerpo += Markup("<li>%s</li>") % _(
+                    "%(producto)s: entregado %(entregado)s de %(pedido)s",
+                    producto=movimiento.product_id.display_name,
+                    entregado=f"{entregada.get(movimiento, 0.0):g}", pedido=f"{pedida[movimiento]:g}",
+                )
+            cuerpo += Markup("</ul>")
+        if sin_stock:
+            cuerpo += Markup("<p>%s</p><ul>") % _(
+                "Se entregó sin existencia en sistema (el inventario queda en negativo):"
+            )
+            for movimiento in sin_stock:
+                cuerpo += Markup("<li>%s</li>") % _(
+                    "%(producto)s: %(cantidad)s",
+                    producto=movimiento.product_id.display_name, cantidad=f"{entregada[movimiento]:g}",
+                )
+            cuerpo += Markup("</ul>")
+        picking.message_post(body=cuerpo, subtype_xmlid="mail.mt_note")
+
+    @api.model
+    def _bajar_cantidad_pedida(self, lineas):
+        """ Baja la cantidad pedida de las líneas de venta a lo entregado,
+        cuando ya no les queda nada pendiente. Odoo deja el cambio en el
+        historial de la orden ("The ordered quantity has been updated").
+
+        Con sudo porque las órdenes pueden ser de otro vendedor ("Ventas: solo
+        sus documentos" no deja escribirlas). El sudo SOLO escribe
+        `product_uom_qty` y SOLO en estas líneas, que son las de los
+        movimientos que se acaban de validar o cancelar en esta entrega; sudo
+        conserva al usuario, así que el mensaje del historial queda a su
+        nombre.
+
+        Al cambiar la cantidad Odoo recalcularía el precio y el descuento de
+        las líneas cuyo precio no se editó a mano (lista de precios): se
+        protegen para que sigan siendo los de la orden, que son los que usó el
+        total que se mostró. """
+        Linea = self.env["sale.order.line"]
+        campos_precio = [
+            Linea._fields[campo]
+            for campo in ("pricelist_item_id", "price_unit", "technical_price_unit", "discount")
+        ]
+        por_cantidad = defaultdict(lambda: Linea.sudo())
+        for linea in lineas.sudo():
+            if linea.move_ids.filtered(lambda m: m.state not in ("done", "cancel")):
+                continue  # aún tiene algo pendiente en otra entrega
+            if linea.product_uom_id.compare(linea.product_uom_qty, linea.qty_delivered) > 0:
+                por_cantidad[linea.qty_delivered] |= linea
+        for cantidad, lineas_cantidad in por_cantidad.items():
+            with self.env.protecting(campos_precio, lineas_cantidad):
+                lineas_cantidad.write({"product_uom_qty": cantidad})
+
+    @api.model
+    def _lineas_bitacora(self, entrega, importes, sin_existencia):
+        """ Un renglón por rollo y por línea de venta de los demás productos. """
+        lineas = []
+        for rollo in entrega["rollos"]:
+            movimiento = rollo["move"]
+            lineas.append(Command.create({
+                "product_id": movimiento.product_id.id,
+                "sale_line_id": movimiento.sale_line_id.id,
+                "move_id": movimiento.id,
+                "cantidad": movimiento.product_uom_qty,
+                "peso_real": rollo["peso"],
+                "precio_unitario": movimiento.precio_por_kg,
+                "importe": importes.get(movimiento.sale_line_id.id, 0.0),
+                "sin_existencia": movimiento in sin_existencia,
+            }))
+        for producto in entrega["productos"]:
+            por_linea = defaultdict(list)
+            for movimiento, cantidad in producto["asignacion"]:
+                por_linea[movimiento.sale_line_id].append((movimiento, cantidad))
+            for linea, partes in por_linea.items():
+                lineas.append(Command.create({
+                    "product_id": producto["producto"].id,
+                    "sale_line_id": linea.id,
+                    "move_id": partes[0][0].id if len(partes) == 1 else False,
+                    "cantidad": sum(cantidad for _movimiento, cantidad in partes),
+                    "precio_unitario": linea.sudo().price_unit,
+                    "importe": importes.get(linea.id, 0.0),
+                    "sin_existencia": any(movimiento in sin_existencia for movimiento, _cantidad in partes),
+                }))
+        return lineas
+
+    @api.model
+    def _resultado_entrega(self, registro, ya_existia):
+        currency = registro.currency_id
+        return {
+            "id": registro.id,
+            "cliente": registro.partner_id.name,
+            "total": registro.total,
+            "total_texto": self._formato_precio(registro.total, currency, centavos=True),
+            "entregas": [
+                {
+                    "folio": picking.name,
+                    "orden": picking.origin,
+                    "estado": "validada" if picking.state == "done" else "cancelada",
+                }
+                for picking in registro.picking_ids.sorted("id")
+            ],
+            "ya_existia": ya_existia,
+        }
 
     @api.model
     def _validar_rollos(self, rollos, pendientes):
@@ -585,9 +822,12 @@ class DuranCaptura(models.AbstractModel):
         return cliente
 
     @api.model
-    def _validar_token(self, token):
+    def _validar_token(self, token, que=None):
         if not isinstance(token, str) or not FORMATO_TOKEN.match(token):
-            raise UserError(_("No se pudo identificar el pedido. Recarga la página e intenta de nuevo."))
+            raise UserError(_(
+                "No se pudo identificar %(que)s. Recarga la página e intenta de nuevo.",
+                que=que or _("el pedido"),
+            ))
         return token
 
     @api.model

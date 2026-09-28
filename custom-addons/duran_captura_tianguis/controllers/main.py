@@ -73,3 +73,7 @@ class CapturaTianguis(http.Controller):
     @http.route("/captura/api/entrega/vista_previa", type="jsonrpc", auth="user", methods=["POST"])
     def api_entrega_vista_previa(self, cliente_id, zona_id, rollos, productos):
         return self._captura().get_vista_previa_entrega(cliente_id, zona_id, rollos, productos)
+
+    @http.route("/captura/api/entrega/confirmar", type="jsonrpc", auth="user", methods=["POST"])
+    def api_entrega_confirmar(self, cliente_id, zona_id, rollos, productos, movimientos_vistos, token):
+        return self._captura().confirmar_entrega(cliente_id, zona_id, rollos, productos, movimientos_vistos, token)

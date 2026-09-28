@@ -19,7 +19,7 @@ RUTAS_PEDIDO = (
 # Rutas del modo Entrega: la pantalla todavía no las usa (paso 6).
 RUTAS_ENTREGA = (
     "/captura/api/entrega/clientes", "/captura/api/entrega/pendiente",
-    "/captura/api/entrega/vista_previa",
+    "/captura/api/entrega/vista_previa", "/captura/api/entrega/confirmar",
 )
 RUTAS_API = RUTAS_PEDIDO + RUTAS_ENTREGA
 
@@ -176,6 +176,11 @@ class CapturaHttpMixin:
         """ Parámetros válidos para cada ruta de RUTAS_API. """
         if ruta.endswith("clientes"):
             return {"zona_id": self.zona_con_clientes.id}
+        if ruta.endswith("entrega/confirmar"):
+            return {
+                "cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id,
+                "rollos": [], "productos": [], "movimientos_vistos": [1], "token": uuid.uuid4().hex,
+            }
         if ruta.endswith("entrega/vista_previa"):
             return {
                 "cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id,
