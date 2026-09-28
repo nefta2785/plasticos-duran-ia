@@ -53,4 +53,39 @@
         <field name="domain_force">[('company_id', 'in', company_ids)]</field>
     </record>
 
+    <!-- Bitácora de cobros: mismas reglas que la de entregas. -->
+    <record id="regla_captura_cobro_propios" model="ir.rule">
+        <field name="name">Cobros en tianguis: solo los propios</field>
+        <field name="model_id" ref="model_duran_captura_cobro"/>
+        <field name="domain_force">[('user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_captura_tianguis'))]"/>
+    </record>
+
+    <record id="regla_captura_cobro_todos" model="ir.rule">
+        <field name="name">Cobros en tianguis: todos</field>
+        <field name="model_id" ref="model_duran_captura_cobro"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('sales_team.group_sale_manager'))]"/>
+    </record>
+
+    <record id="regla_captura_cobro_linea_propios" model="ir.rule">
+        <field name="name">Documentos de cobros en tianguis: solo los propios</field>
+        <field name="model_id" ref="model_duran_captura_cobro_linea"/>
+        <field name="domain_force">[('cobro_id.user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('group_captura_tianguis'))]"/>
+    </record>
+
+    <record id="regla_captura_cobro_linea_todos" model="ir.rule">
+        <field name="name">Documentos de cobros en tianguis: todos</field>
+        <field name="model_id" ref="model_duran_captura_cobro_linea"/>
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('sales_team.group_sale_manager'))]"/>
+    </record>
+
+    <record id="regla_captura_cobro_compania" model="ir.rule">
+        <field name="name">Cobros en tianguis: multicompañía</field>
+        <field name="model_id" ref="model_duran_captura_cobro"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+    </record>
+
 </odoo>

@@ -7,12 +7,23 @@ async function pasoInicio() {
     check("Inicio: botón superior dice Salir", txt("#btn-regresar"), "‹ Salir");
     check("Inicio: pregunta", txt(".pregunta"), "¿Qué vas a hacer?");
     check(
-        "Inicio: dos modos, Pedido y Entrega",
+        "Inicio: tres modos, Pedido, Entrega y Cobro",
         qa(".btn-modo").map((b) => [b.querySelector(".modo-nombre").textContent, b.querySelector(".modo-detalle").textContent]),
-        [["Pedido", "Levantar un pedido nuevo"], ["Entrega", "Entregar lo que ya pidieron"]]
+        [
+            ["Pedido", "Levantar un pedido nuevo"],
+            ["Entrega", "Entregar lo que ya pidieron"],
+            ["Cobro", "Cobrar lo entregado y lo pendiente"],
+        ]
     );
     check("Inicio: sin barra de pedido ni pestañas", [q("#barra-pedido").hidden, q("#categorias").hidden], [true, true]);
-    check("Inicio: los dos modos habilitados", [modo("Pedido").disabled, modo("Entrega").disabled], [false, false]);
+    check(
+        "Inicio: Pedido y Entrega habilitados; Cobro deshabilitado (aún sin pantallas)",
+        [modo("Pedido").disabled, modo("Entrega").disabled, modo("Cobro").disabled],
+        [false, false, true]
+    );
+    modo("Cobro").click();
+    await espera(80);
+    check("Cobro deshabilitado: tocarlo no hace nada", [txt("#titulo"), llamadas.length], ["Captura", 0]);
     check("Inicio: no llama al servidor", llamadas.length, 0);
 
     modo("Pedido").click();

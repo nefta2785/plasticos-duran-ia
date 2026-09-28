@@ -351,6 +351,8 @@
                 botonModo("🚚", "Entrega", "Entregar lo que ya pidieron", () =>
                     irA("zonas", { modo: "entrega", zona: null, cliente: null })
                 ),
+                // Cobro: deshabilitado hasta construir sus pantallas.
+                botonModo("💵", "Cobro", "Cobrar lo entregado y lo pendiente", null),
             ])
         );
     }

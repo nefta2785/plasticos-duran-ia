@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Facturas y pago solo para el gerente de Ventas: quien cobra no puede
+         leer facturas de otros vendedores ni pagos. -->
+
+    <record id="captura_cobro_view_list" model="ir.ui.view">
+        <field name="name">duran.captura.cobro.list</field>
+        <field name="model">duran.captura.cobro</field>
+        <field name="arch" type="xml">
+            <list string="Cobros en tianguis" create="false" edit="false" delete="false">
+                <field name="fecha"/>
+                <field name="partner_id"/>
+                <field name="zona_id"/>
+                <field name="user_id" widget="many2one_avatar_user" optional="show"/>
+                <field name="tipo"/>
+                <field name="invoice_ids" widget="many2many_tags" optional="hide" groups="sales_team.group_sale_manager"/>
+                <field name="currency_id" column_invisible="True"/>
+                <field name="total_a_cobrar" sum="Total a cobrar" optional="show"/>
+                <field name="monto_recibido" sum="Efectivo recibido"/>
+                <field name="saldo_pendiente" sum="Queda pendiente" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="captura_cobro_view_form" model="ir.ui.view">
+        <field name="name">duran.captura.cobro.form</field>
+        <field name="model">duran.captura.cobro</field>
+        <field name="arch" type="xml">
+            <form string="Cobro en tianguis" create="false" edit="false" delete="false">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id"/>
+                            <field name="zona_id"/>
+                            <field name="user_id" widget="many2one_avatar_user"/>
+                            <field name="fecha"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                        <group>
+                            <field name="currency_id" invisible="True"/>
+                            <field name="tipo"/>
+                            <field name="total_entregado"/>
+                            <field name="saldo_anterior"/>
+                            <field name="creditos"/>
+                            <field name="total_a_cobrar"/>
+                            <field name="monto_recibido"/>
+                            <field name="saldo_pendiente"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Documentos" name="documentos" groups="sales_team.group_sale_manager">
+                            <group>
+                                <field name="invoice_ids" widget="many2many_tags"/>
+                                <field name="payment_id"/>
+                            </group>
+                            <field name="linea_ids">
+                                <list>
+                                    <field name="move_id"/>
+                                    <field name="tipo"/>
+                                    <field name="currency_id" column_invisible="True"/>
+                                    <field name="saldo_antes"/>
+                                    <field name="aplicado" sum="Aplicado"/>
+                                    <field name="saldo_despues" sum="Saldo después"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Notas" name="notas" invisible="not nota">
+                            <field name="nota"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="captura_cobro_view_search" model="ir.ui.view">
+        <field name="name">duran.captura.cobro.search</field>
+        <field name="model">duran.captura.cobro</field>
+        <field name="arch" type="xml">
+            <search string="Cobros en tianguis">
+                <field name="partner_id"/>
+                <field name="zona_id"/>
+                <field name="user_id"/>
+                <filter string="Mis cobros" name="mis_cobros" domain="[('user_id', '=', uid)]"/>
+                <separator/>
+                <filter string="Pagó todo" name="pago_todo" domain="[('tipo', '=', 'todo')]"/>
+                <filter string="Pagó una parte" name="pago_parte" domain="[('tipo', '=', 'parte')]"/>
+                <filter string="No pagó hoy" name="pago_nada" domain="[('tipo', '=', 'nada')]"/>
+                <separator/>
+                <filter string="Fecha" name="filtro_fecha" date="fecha"/>
+                <group>
+                    <filter string="Zona" name="agrupar_zona" context="{'group_by': 'zona_id'}"/>
+                    <filter string="Cobró" name="agrupar_usuario" context="{'group_by': 'user_id'}"/>
+                    <filter string="Día" name="agrupar_dia" context="{'group_by': 'fecha:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="captura_cobro_action" model="ir.actions.act_window">
+        <field name="name">Cobros en tianguis</field>
+        <field name="res_model">duran.captura.cobro</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Todavía no hay cobros en tianguis</p>
+            <p>Aquí aparece cada cobro confirmado desde la pantalla de captura (modo Cobro).</p>
+        </field>
+    </record>
+
+    <menuitem id="captura_cobro_menu"
+        name="Cobros en tianguis"
+        parent="sale.sale_order_menu"
+        action="captura_cobro_action"
+        groups="sales_team.group_sale_manager,group_captura_tianguis"
+        sequence="26"/>
+
+</odoo>

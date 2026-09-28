@@ -9,7 +9,8 @@ levantó el pedido, y una página propia (/captura) pensada para usarse desde el
 celular por un usuario del grupo "Captura tianguis".
 
 Cada entrega confirmada desde la pantalla queda en una bitácora (Ventas >
-Órdenes > Entregas en tianguis).
+Órdenes > Entregas en tianguis), y cada cobro en otra (Ventas > Órdenes >
+Cobros en tianguis).
 """,
     "author": "Plásticos Durán",
     "license": "LGPL-3",
@@ -20,6 +21,7 @@ Cada entrega confirmada desde la pantalla queda en una bitácora (Ventas >
         "data/ir_config_parameter.xml",
         "views/sale_order_views.xml",
         "views/captura_entrega_views.xml",
+        "views/captura_cobro_views.xml",
         "views/captura_templates.xml",
     ],
     "installable": True,
