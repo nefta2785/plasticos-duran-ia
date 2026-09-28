@@ -172,6 +172,7 @@ Pruebas de `duran_peso_variable` (`custom-addons/duran_peso_variable/tests/`):
 | Un rollo por línea, movimiento de rollo máximo 1, factura por peso real de la entrega, la devolución no arrastra el peso | `test_peso_variable.py` |
 | Precio por kg congelado al validar la entrega: la factura lo usa aunque el producto cambie de precio (también al corregir el peso en la factura); entregas antiguas sin precio congelado usan el vigente | `test_precio_congelado.py` |
 | Cambio de producto (rollo y producto normal): abono y rollo nuevo al precio vigente, nota de crédito, factura nueva cobrada | `test_precio_congelado.py` |
+| Al validar una entrega (desde la app o desde Odoo) el peso y el precio congelado pasan a la línea de venta: la orden muestra el monto de la vista previa, la bitácora y la factura; cambiar el precio después no cambia la línea, y una línea facturada nunca cambia de precio; las devoluciones no tocan la línea; factura y nota de crédito salen igual; el sudo solo escribe peso y precio de los rollos validados (vendedor con orden de otro vendedor, usuario solo de almacén); el campo nuevo no recalcula líneas existentes al actualizar | `test_sincronizar_linea.py` (y `test_entrega_confirmar.py` en la captura) |
 
 ## 6. Qué NO cubren las pruebas automáticas
 

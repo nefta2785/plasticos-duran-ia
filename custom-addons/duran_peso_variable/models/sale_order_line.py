@@ -10,18 +10,31 @@ class SaleOrderLine(models.Model):
         digits=(16, 3),
         help="Peso real del rollo, usado para calcular el precio cuando el producto es de peso variable.",
     )
+    precio_por_kg = fields.Float(
+        string="Precio por kg (congelado)",
+        digits="Product Price",
+        readonly=True,
+        copy=False,
+        help="Precio por kg con el que se entregó el rollo, copiado de la Entrega al "
+        "validarla. Si está vacío (rollo aún sin entregar) se usa el precio vigente.",
+    )
     es_peso_variable = fields.Boolean(
         related="product_id.es_peso_variable",
         string="Es peso variable",
         readonly=True,
     )
 
-    @api.depends("peso_real")
+    @api.depends("peso_real", "precio_por_kg")
     def _compute_price_unit(self):
-        super()._compute_price_unit()
-        for line in self:
-            if line.es_peso_variable:
-                line.price_unit = line.peso_real * line.product_id.precio_por_kg
+        # El precio de un rollo es siempre peso × precio por kg: la tarifa de
+        # Odoo (lista de precios, technical_price_unit) no aplica y no se toca.
+        peso_variable = self.filtered("es_peso_variable")
+        super(SaleOrderLine, self - peso_variable)._compute_price_unit()
+        for line in peso_variable:
+            # Como Odoo (sale.order.line._compute_price_unit): una línea ya
+            # facturada nunca cambia de precio.
+            if not line.qty_invoiced > 0:
+                line.price_unit = line.peso_real * (line.precio_por_kg or line.product_id.precio_por_kg)
 
     def _prepare_procurement_values(self):
         values = super()._prepare_procurement_values()

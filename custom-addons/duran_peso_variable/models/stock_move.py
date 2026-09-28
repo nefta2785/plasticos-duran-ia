@@ -47,8 +47,28 @@ class StockMove(models.Model):
         moves = super()._action_done(cancel_backorder=cancel_backorder)
         # Solo las salidas al cliente: en devoluciones y cambios el abono se
         # sigue calculando con el precio vigente (ver duran.cambio.producto).
-        for move in moves.filtered(
+        entregas = moves.filtered(
             lambda m: m.es_peso_variable and m.location_dest_usage == "customer"
-        ):
+        )
+        for move in entregas:
             move.precio_por_kg = move.product_id.precio_por_kg
+        entregas._sincronizar_linea_venta()
         return moves
+
+    def _sincronizar_linea_venta(self):
+        """ Copia el peso real y el precio por kg congelado de cada rollo
+        entregado a su línea de venta, para que la orden muestre el monto real
+        (la línea calcula su precio como peso × precio por kg congelado).
+
+        Con sudo porque quien valida puede no poder escribir la orden (un
+        vendedor con "solo sus documentos" validando la de otro vendedor; los
+        usuarios de almacén sí pueden, por sale_stock). El sudo SOLO escribe
+        `peso_real` y `precio_por_kg`, y SOLO en las líneas de estos
+        movimientos recién validados; sudo conserva al usuario, así que el
+        historial de la orden queda a su nombre. Una línea ya facturada no se
+        toca: nunca cambia de precio. """
+        for move in self.filtered("sale_line_id"):
+            linea = move.sale_line_id.sudo()
+            if linea.qty_invoiced > 0:
+                continue
+            linea.write({"peso_real": move.peso_real, "precio_por_kg": move.precio_por_kg})

@@ -98,6 +98,11 @@ class TestPrecioCongelado(PesoVariableDatosPrueba, TransactionCase):
         self.assertEqual((nueva_entrega.peso_real, nueva_entrega.precio_por_kg), (2.0, 60.0))
         devolucion = orden.order_line.move_ids.filtered(lambda m: m.origin_returned_move_id)
         self.assertEqual(devolucion.precio_por_kg, 0.0, "La devolución no congela precio")
+        linea = orden.order_line
+        self.assertEqual((linea.peso_real, linea.precio_por_kg, linea.price_unit), (1.5, 50.0, 75.0),
+                         "La línea original conserva lo entregado")
+        nueva_linea = factura_nueva.invoice_line_ids.sale_line_ids
+        self.assertEqual((nueva_linea.peso_real, nueva_linea.precio_por_kg, nueva_linea.price_unit), (2.0, 60.0, 120.0))
 
     def test_cambio_de_producto_normal(self):
         orden, _factura = self._entregado_y_facturado(self.normal)

@@ -122,8 +122,10 @@ class TestEntregaConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual(orden.picking_ids.state, "done")
         self.assertEqual((r1 | r2).mapped("peso_real"), [1.237, 0.913])
         self.assertEqual((r1 | r2).mapped("precio_por_kg"), [86.25, 86.25], "Precio congelado al validar")
+        self.assertEqual(orden.amount_total, resultado["total"], "La orden muestra el monto de la vista previa")
 
         self.rollo.product_tmpl_id.precio_por_kg = 99.0  # sube otra vez antes de facturar
+        self.assertEqual(orden.amount_total, resultado["total"], "El precio congelado no cambia")
         factura = orden._create_invoices()
         self.assertEqual(factura.amount_total, resultado["total"])
         rollos = factura.invoice_line_ids.filtered("es_peso_variable")
@@ -135,6 +137,7 @@ class TestEntregaConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
             (registro.token, registro.user_id, registro.partner_id, registro.zona_id, registro.total),
             (token, self.mama, self.cliente, self.zona_con_clientes, resultado["total"]),
         )
+        self.assertEqual(registro.total, orden.amount_total, "Bitácora = orden = vista previa = factura")
         self.assertEqual((registro.picking_ids, registro.order_ids), (orden.picking_ids, orden))
         self.assertEqual(
             [(l.product_id, l.cantidad, l.peso_real, l.precio_unitario) for l in registro.linea_ids],
@@ -345,9 +348,11 @@ class TestEntregaConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
     # === Permisos y alcance del sudo === #
 
     def test_sudo_solo_escribe_la_cantidad_de_las_lineas_de_esta_entrega(self):
-        """ (1) solo product_uom_qty, (2) solo en las líneas de los movimientos
-        validados o cancelados en esta entrega, aunque la pantalla mande otros
-        datos; los demás campos de esas líneas no cambian. """
+        """ (1) solo product_uom_qty (la captura) y peso_real + precio_por_kg
+        (duran_peso_variable, al validar un rollo), (2) solo en las líneas de
+        los movimientos validados o cancelados en esta entrega, aunque la
+        pantalla mande otros datos; los demás campos de esas líneas no
+        cambian. """
         o1 = self._confirmada(self.cliente, [(self.rollo, 2), (self.pieza, 3, 12.5)], vendedor=self.otro_vendedor)
         otra = self._confirmada(self.otro_cliente, [(self.pieza, 4)], vendedor=self.otro_vendedor)
         r1, _r2 = self._movimientos(o1, self.rollo)
@@ -359,8 +364,9 @@ class TestEntregaConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         params["product_uom_qty"] = 0
         nueva = self._confirmada(self.cliente, [(self.pieza, 5)], vendedor=self.otro_vendedor)
         self.pieza.product_tmpl_id.list_price = 99.0  # no debe re-tarifar al bajar la cantidad
-        campos = ["price_unit", "discount", "tax_ids", "name", "product_id", "product_uom_id", "peso_real"]
-        antes = o1.order_line.read(campos)
+        campos = ["price_unit", "discount", "tax_ids", "name", "product_id", "product_uom_id"]
+        pieza_linea = o1.order_line.filtered(lambda l: l.product_id == self.pieza)
+        antes = pieza_linea.read(campos)
 
         escrituras = []
         SaleOrderLine = type(self.env["sale.order.line"])
@@ -374,12 +380,16 @@ class TestEntregaConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
             self._resultado(RUTA_CONFIRMAR, params)
 
         self.assertTrue(escrituras)
+        rollo_validado = r1.sale_line_id
         for ids, campos_escritos, su, uid in escrituras:
-            self.assertEqual(campos_escritos, {"product_uom_qty"})
+            self.assertIn(campos_escritos, ({"product_uom_qty"}, {"peso_real", "precio_por_kg"}))
+            if campos_escritos != {"product_uom_qty"}:
+                self.assertEqual(ids, set(rollo_validado.ids), "Peso y precio: solo el rollo validado")
             self.assertTrue(ids <= set(o1.order_line.ids))
             self.assertEqual((su, uid), (True, self.mama.id))
         o1.order_line.invalidate_recordset()
-        self.assertEqual(o1.order_line.read(campos), antes)
+        self.assertEqual(pieza_linea.read(campos), antes)
+        self.assertEqual((rollo_validado.peso_real, rollo_validado.price_unit), (1.2, 1.2 * 85.5))
         self.assertEqual(o1.order_line.sorted("id").mapped("product_uom_qty"), [1.0, 0.0, 2.0])
         self.assertEqual((otra.order_line.product_uom_qty, otra.picking_ids.state), (4.0, "assigned"))
         self.assertEqual((nueva.order_line.product_uom_qty, nueva.picking_ids.state), (5.0, "assigned"))

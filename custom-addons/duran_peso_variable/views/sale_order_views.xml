@@ -9,6 +9,7 @@
             <xpath expr="//field[@name='order_line']/list/field[@name='price_unit']" position="before">
                 <field name="es_peso_variable" column_invisible="True"/>
                 <field name="peso_real" string="Peso real (kg)" invisible="not es_peso_variable"/>
+                <field name="precio_por_kg" optional="show" invisible="not es_peso_variable or not precio_por_kg"/>
             </xpath>
             <button id="create_invoice_percentage" position="after">
                 <button string="Cambio de producto" name="%(action_duran_cambio_producto)d"
