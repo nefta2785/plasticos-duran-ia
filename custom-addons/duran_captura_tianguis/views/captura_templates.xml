@@ -2,21 +2,41 @@
 <odoo>
 
     <!-- Página independiente (sin el cliente web del backend), pensada para
-         celular. Por ahora solo confirma que la ruta y el grupo funcionan. -->
+         celular. Todo el contenido lo dibuja static/src/captura.js. -->
     <template id="captura_page" name="Captura tianguis">&lt;!DOCTYPE html&gt;
 <html lang="es">
     <head>
         <meta charset="utf-8"/>
-        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+        <meta name="theme-color" content="#0b3d91"/>
         <title>Captura tianguis</title>
-        <style>
-            body { font-family: system-ui, sans-serif; margin: 0; padding: 24px 16px; font-size: 20px; }
-            h1 { font-size: 28px; margin: 0 0 12px; }
-        </style>
+        <link rel="stylesheet" t-attf-href="/duran_captura_tianguis/static/src/captura.css?v=#{version}"/>
+        <script t-attf-src="/duran_captura_tianguis/static/src/captura.js?v=#{version}" defer="defer"></script>
     </head>
     <body>
-        <h1>Hola, <t t-esc="user.name"/></h1>
-        <p>La pantalla de captura está lista para construirse.</p>
+        <header class="barra">
+            <button type="button" id="btn-regresar" class="btn-regresar">‹ Regresar</button>
+            <div class="barra-textos">
+                <h1 id="titulo" class="titulo">Captura</h1>
+                <p id="subtitulo" class="subtitulo" hidden="hidden"></p>
+            </div>
+        </header>
+        <nav id="categorias" class="categorias" role="tablist" aria-label="Categorías" hidden="hidden"></nav>
+        <main id="contenido" class="contenido" aria-live="polite">
+            <p class="aviso">Cargando…</p>
+            <noscript><p class="aviso">Esta pantalla necesita JavaScript activado.</p></noscript>
+        </main>
+        <footer id="barra-pedido" class="barra-pedido" hidden="hidden">
+            <span class="pedido-icono" aria-hidden="true">🛒</span>
+            <span id="pedido-conteo" class="pedido-conteo">0 productos</span>
+        </footer>
+        <div id="modal" class="modal-fondo" hidden="hidden">
+            <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="modal-texto">
+                <p id="modal-texto" class="modal-texto"></p>
+                <button type="button" id="modal-si" class="btn btn-peligro"></button>
+                <button type="button" id="modal-no" class="btn btn-secundario"></button>
+            </div>
+        </div>
     </body>
 </html>
     </template>

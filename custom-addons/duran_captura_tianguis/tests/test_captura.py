@@ -1,3 +1,5 @@
+import re
+
 from odoo import Command
 from odoo.tests import HttpCase, TransactionCase, new_test_user, tagged
 
@@ -26,6 +28,9 @@ class CapturaDatosPrueba:
             })
 
         cls.normal = plantilla("Normal prueba").product_variant_id
+        cls.por_kilo = plantilla(
+            "Por kilo prueba", uom_id=env.ref("uom.product_uom_kgm").id,
+        ).product_variant_id
         cls.pv_con_precio = plantilla(
             "Peso variable con precio prueba", es_peso_variable=True, precio_por_kg=50.0,
         ).product_variant_id
@@ -136,7 +141,25 @@ class TestCapturaHttp(CapturaDatosPrueba, HttpCase):
         self._entrar(self.usuario_captura)
         response = self.url_open("/captura")
         self.assertEqual(response.status_code, 200)
-        self.assertIn(self.usuario_captura.name, response.text)
+        for contenedor in ('id="contenido"', 'id="btn-regresar"', 'id="barra-pedido"'):
+            self.assertIn(contenedor, response.text)
+
+    def test_pagina_carga_js_y_css(self):
+        self._entrar(self.usuario_captura)
+        pagina = self.url_open("/captura").text
+        self.assertIn('name="viewport"', pagina)
+        tipos = {"css": "text/css", "js": "javascript"}
+        for extension, tipo in tipos.items():
+            with self.subTest(archivo=extension):
+                encontrado = re.search(
+                    rf'"(/duran_captura_tianguis/static/src/captura\.{extension}\?v=\d+)"', pagina,
+                )
+                self.assertTrue(encontrado, f"la página no enlaza captura.{extension} con ?v=")
+                response = self.url_open(encontrado.group(1))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(tipo, response.headers["Content-Type"])
+                if extension == "js":
+                    self.assertIn("/captura/api/catalogo", response.text)
 
     # === Rutas JSON con el grupo === #
 
@@ -185,7 +208,7 @@ class TestCapturaHttp(CapturaDatosPrueba, HttpCase):
         self.assertEqual(mi_categoria["nombre"], self.categoria.complete_name)
         self.assertEqual(
             {p["id"] for p in mi_categoria["productos"]},
-            {self.normal.id, self.pv_con_precio.id, *self.con_variantes.ids},
+            {self.normal.id, self.por_kilo.id, self.pv_con_precio.id, *self.con_variantes.ids},
         )
         for excluido in (self.pv_precio_cero, self.pv_sin_precio, self.no_vendible, self.archivado):
             self.assertNotIn(excluido.id, productos, excluido.name)
@@ -195,13 +218,16 @@ class TestCapturaHttp(CapturaDatosPrueba, HttpCase):
             sorted(productos[v.id]["nombre"] for v in self.con_variantes),
             ["Variantes prueba 25x35", "Variantes prueba 30x40"],
         )
+        # Precios: "$50/kg" para peso variable, "c/u" para piezas y "/<unidad>"
+        # para el resto. La ruta responde en el idioma del usuario que captura.
+        simbolo = self.env.company.currency_id.symbol
+        kg = self.por_kilo.uom_id.with_context(lang=self.usuario_captura.lang).name
         pv = productos[self.pv_con_precio.id]
-        self.assertEqual(pv["precio"], 50.0)
-        self.assertTrue(pv["precio_texto"].endswith("/kg"), pv["precio_texto"])
+        self.assertEqual((pv["precio"], pv["precio_texto"], pv["unidad"]), (50.0, f"{simbolo}50/kg", "c/u"))
         normal = productos[self.normal.id]
-        self.assertEqual(normal["precio"], 10.0)
-        # La ruta responde en el idioma del usuario que captura.
-        self.assertEqual(normal["uom"], self.normal.uom_id.with_context(lang=self.usuario_captura.lang).name)
+        self.assertEqual((normal["precio"], normal["precio_texto"], normal["unidad"]), (10.0, f"{simbolo}10 c/u", "c/u"))
+        por_kilo = productos[self.por_kilo.id]
+        self.assertEqual((por_kilo["precio_texto"], por_kilo["unidad"]), (f"{simbolo}10/{kg}", kg))
 
     # === Rutas JSON sin grupo / sin sesión === #
 

@@ -40,6 +40,7 @@ class DuranCaptura(models.AbstractModel):
             lambda p: (p.categ_id.complete_name or "", p.name.lower(), p.id)
         )
         currency = self.env.company.currency_id
+        uom_unidad = self.env.ref("uom.product_uom_unit", raise_if_not_found=False)
         categorias = {}
         for producto in productos:
             categoria = categorias.setdefault(producto.categ_id.id, {
@@ -47,26 +48,33 @@ class DuranCaptura(models.AbstractModel):
                 "nombre": producto.categ_id.complete_name,
                 "productos": [],
             })
-            categoria["productos"].append(self._get_producto_vals(producto, currency))
+            categoria["productos"].append(self._get_producto_vals(producto, currency, uom_unidad))
         return list(categorias.values())
 
     @api.model
-    def _get_producto_vals(self, producto, currency):
+    def _get_producto_vals(self, producto, currency, uom_unidad):
+        # Las piezas se muestran como "c/u" ("2 c/u", "$325 c/u"); el resto con
+        # el nombre de su unidad ("3 kg", "$70/kg").
+        es_pieza = producto.uom_id == uom_unidad
+        unidad = "c/u" if es_pieza else producto.uom_id.name
         if producto.es_peso_variable:
             precio = producto.precio_por_kg
-            unidad_precio = "kg"
+            sufijo_precio = "/kg"
         else:
             precio = producto.lst_price
-            unidad_precio = producto.uom_id.name
+            sufijo_precio = " c/u" if es_pieza else f"/{unidad}"
         variante = producto.product_template_attribute_value_ids._get_combination_name()
         return {
             "id": producto.id,
             "nombre": f"{producto.name} {variante}" if variante else producto.name,
-            "uom": producto.uom_id.name,
+            "unidad": unidad,
             "es_peso_variable": producto.es_peso_variable,
             "precio": precio,
-            "precio_texto": "%s/%s" % (
-                format_amount(self.env, precio, currency, trailing_zeroes=False),
-                unidad_precio,
-            ),
+            "precio_texto": self._formato_precio(precio, currency) + sufijo_precio,
         }
+
+    @api.model
+    def _formato_precio(self, precio, currency):
+        """ "$85" en lugar de "$ 85": más corto en la pantalla del celular. """
+        texto = format_amount(self.env, precio, currency, trailing_zeroes=False)
+        return texto.replace(f"{currency.symbol}\N{NO-BREAK SPACE}", currency.symbol, 1)

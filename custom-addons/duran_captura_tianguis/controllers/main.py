@@ -1,10 +1,17 @@
+import os
+
 from werkzeug.exceptions import Forbidden
 
 from odoo import _, http
 from odoo.exceptions import AccessError
 from odoo.http import request
+from odoo.tools.misc import file_path
 
 GRUPO_CAPTURA = "duran_captura_tianguis.group_captura_tianguis"
+ARCHIVOS_ESTATICOS = (
+    "duran_captura_tianguis/static/src/captura.css",
+    "duran_captura_tianguis/static/src/captura.js",
+)
 
 
 class CapturaTianguis(http.Controller):
@@ -21,12 +28,18 @@ class CapturaTianguis(http.Controller):
             raise AccessError(_("No tienes permiso para usar la pantalla de captura."))
         return request.env["duran.captura"]
 
+    def _version_estaticos(self):
+        """ Odoo sirve /static con caché de una semana: se agrega `?v=` con la
+        fecha de modificación para que el celular descargue siempre la última
+        versión del JS y el CSS. """
+        return int(max(os.path.getmtime(file_path(ruta)) for ruta in ARCHIVOS_ESTATICOS))
+
     @http.route("/captura", type="http", auth="user", methods=["GET"])
     def captura(self, **kwargs):
         if not self._tiene_grupo_captura():
             raise Forbidden()
         return request.render("duran_captura_tianguis.captura_page", {
-            "user": request.env.user,
+            "version": self._version_estaticos(),
         })
 
     @http.route("/captura/api/zonas", type="jsonrpc", auth="user", methods=["POST"])
