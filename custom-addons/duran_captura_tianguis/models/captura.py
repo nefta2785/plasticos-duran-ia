@@ -1,6 +1,7 @@
+import re
 from datetime import timedelta
 
-from odoo import _, api, fields, models
+from odoo import Command, _, api, fields, models
 from odoo.exceptions import UserError
 from odoo.tools import format_amount
 
@@ -8,6 +9,9 @@ from odoo.tools import format_amount
 # como máximo MAX_HABITUALES productos.
 DIAS_HABITUALES = 90
 MAX_HABITUALES = 8
+
+# Token que genera la pantalla para cada pedido: 32 caracteres hexadecimales.
+FORMATO_TOKEN = re.compile(r"^[0-9a-f]{32}$")
 
 
 class DuranCaptura(models.AbstractModel):
@@ -103,6 +107,103 @@ class DuranCaptura(models.AbstractModel):
         currency = self.env.company.currency_id
         uom_unidad = self.env.ref("uom.product_uom_unit", raise_if_not_found=False)
         return [self._get_producto_vals(producto, currency, uom_unidad) for producto in productos]
+
+    @api.model
+    def enviar_pedido(self, cliente_id, zona_id, lineas, token):
+        """ Crea SIEMPRE una orden nueva para el cliente (nunca suma a una
+        existente), marcada con la zona desde la que se eligió y con quien
+        captura como vendedor, y la confirma.
+
+        :param lineas: [{"producto_id": int, "cantidad": int >= 1}, ...]
+        :param token: identificador del pedido generado por la pantalla. Si ya
+            hay una orden con ese token (doble toque, reintento tras perder la
+            señal), se devuelve esa orden en lugar de crear otra.
+
+        Todo corre en una sola transacción: si algo falla (incluida la
+        confirmación), no queda ninguna orden a medias. """
+        token = self._validar_token(token)
+        ya_enviada = self.env["sale.order"].search([("captura_token", "=", token)], limit=1)
+        if ya_enviada:
+            return self._resultado_envio(ya_enviada, ya_existia=True)
+
+        zona = self.env["res.partner.category"].browse(int(zona_id)).exists()
+        if not zona:
+            raise UserError(_("La zona ya no existe."))
+        cliente = self.env["res.partner"].browse(int(cliente_id)).exists()
+        if not cliente:
+            raise UserError(_("El cliente ya no existe."))
+        if zona not in cliente.category_id:
+            raise UserError(_(
+                "%(cliente)s ya no está en la zona %(zona)s.",
+                cliente=cliente.name, zona=zona.display_name,
+            ))
+
+        cantidades = self._validar_lineas(lineas)
+        productos = self.env["product.product"].search(
+            self._dominio_productos_vendibles() + [("id", "in", list(cantidades))]
+        )
+        no_disponibles = self.env["product.product"].browse(
+            [producto_id for producto_id in cantidades if producto_id not in productos.ids]
+        ).exists()
+        if len(productos) != len(cantidades):
+            raise UserError(_(
+                "Estos productos ya no están a la venta: %(productos)s. "
+                "Quítalos del pedido e intenta de nuevo.",
+                productos=", ".join(no_disponibles.mapped("display_name")) or _("(borrados)"),
+            ))
+
+        orden = self.env["sale.order"].create({
+            "partner_id": cliente.id,
+            "zona_id": zona.id,
+            "user_id": self.env.user.id,
+            "captura_token": token,
+            "order_line": [
+                Command.create({"product_id": producto_id, "product_uom_qty": cantidad})
+                for producto_id, cantidad in cantidades.items()
+            ],
+        })
+        orden.action_confirm()
+        return self._resultado_envio(orden, ya_existia=False)
+
+    @api.model
+    def _validar_token(self, token):
+        if not isinstance(token, str) or not FORMATO_TOKEN.match(token):
+            raise UserError(_("No se pudo identificar el pedido. Recarga la página e intenta de nuevo."))
+        return token
+
+    @api.model
+    def _validar_lineas(self, lineas):
+        """ Devuelve {producto_id: cantidad} en el orden recibido. Las
+        cantidades son siempre enteras y mayores a cero (no se venden medios
+        kilos). """
+        if not isinstance(lineas, list) or not lineas:
+            raise UserError(_("El pedido está vacío."))
+        cantidades = {}
+        for linea in lineas:
+            producto_id = linea.get("producto_id") if isinstance(linea, dict) else None
+            cantidad = linea.get("cantidad") if isinstance(linea, dict) else None
+            if not self._es_entero(producto_id):
+                raise UserError(_("El pedido trae un producto inválido. Recarga la página."))
+            if not self._es_entero(cantidad) or cantidad < 1:
+                raise UserError(_("Las cantidades deben ser números enteros mayores a cero."))
+            cantidades[producto_id] = cantidades.get(producto_id, 0) + cantidad
+        return cantidades
+
+    @staticmethod
+    def _es_entero(valor):
+        # bool es subclase de int en Python: True no es una cantidad válida.
+        return isinstance(valor, int) and not isinstance(valor, bool)
+
+    @api.model
+    def _resultado_envio(self, orden, ya_existia):
+        return {
+            "id": orden.id,
+            "nombre": orden.name,
+            "cliente": orden.partner_id.name,
+            "zona": orden.zona_id.display_name,
+            "productos": int(sum(orden.order_line.mapped("product_uom_qty"))),
+            "ya_existia": ya_existia,
+        }
 
     @api.model
     def _dominio_productos_vendibles(self):

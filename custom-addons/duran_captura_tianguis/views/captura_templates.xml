@@ -27,8 +27,11 @@
             <noscript><p class="aviso">Esta pantalla necesita JavaScript activado.</p></noscript>
         </main>
         <footer id="barra-pedido" class="barra-pedido" hidden="hidden">
-            <span class="pedido-icono" aria-hidden="true">🛒</span>
-            <span id="pedido-conteo" class="pedido-conteo">0 productos</span>
+            <!-- En Productos: "Revisar pedido". En Resumen: "Enviar pedido". -->
+            <button type="button" id="btn-pedido" class="btn-pedido" disabled="disabled">
+                <span id="pedido-conteo" class="pedido-conteo">Pedido vacío</span>
+                <span id="pedido-accion" class="pedido-accion" hidden="hidden"></span>
+            </button>
         </footer>
         <div id="modal" class="modal-fondo" hidden="hidden">
             <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="modal-texto">

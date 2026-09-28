@@ -12,6 +12,7 @@
     --seleccion: #e3ecff;
     --peligro: #b00020;
     --peligro-texto: #ffffff;
+    --exito: #0a6b2c;
     --separador: #c9c9c9;
     --alto-boton: 64px;
     --radio: 12px;
@@ -29,7 +30,7 @@ html, body {
     -webkit-text-size-adjust: 100%;
 }
 
-body { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+body { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }  /* espacio para la barra del pedido */
 
 button {
     font: inherit;
@@ -285,19 +286,106 @@ button {
     right: 0;
     bottom: 0;
     z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    min-height: 64px;
     padding: 8px 16px;
     padding-bottom: calc(8px + env(safe-area-inset-bottom));
     background: var(--texto);
-    color: var(--fondo);
-    font-size: 22px;
-    font-weight: 800;
 }
 .barra-pedido.con-productos { background: var(--primario); }
+.barra-pedido.para-enviar { background: var(--exito); }
+
+.btn-pedido {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 64px;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: var(--radio);
+    background: transparent;
+    color: var(--fondo);
+}
+.btn-pedido:disabled { cursor: default; }
+.btn-pedido:not(:disabled):active { background: rgba(255, 255, 255, 0.18); }
+
+.pedido-conteo {
+    font-size: 19px;
+    font-weight: 700;
+}
+.pedido-accion {
+    font-size: 24px;
+    font-weight: 800;
+}
+
+/* === Resumen === */
+
+.resumen-linea {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 64px;
+    padding: 10px 16px;
+    border: 2px solid var(--borde);
+    border-radius: var(--radio);
+}
+.resumen-nombre {
+    flex: 1;
+    min-width: 0;
+    font-size: 21px;
+    font-weight: 700;
+}
+.resumen-cantidad {
+    flex: none;
+    font-size: 24px;
+    font-weight: 800;
+}
+
+.nota {
+    margin: 16px 0 0;
+    font-size: 18px;
+    color: var(--texto-suave);
+    text-align: center;
+}
+
+.error-envio {
+    margin: 16px 0 0;
+    padding: 14px 16px;
+    border: 3px solid var(--peligro);
+    border-radius: var(--radio);
+    color: var(--peligro);
+    font-size: 20px;
+    font-weight: 700;
+}
+
+/* === Pedido enviado === */
+
+.enviado {
+    margin: 8px 0 24px;
+    text-align: center;
+}
+.enviado-marca {
+    display: inline-block;
+    width: 88px;
+    height: 88px;
+    margin: 0 0 8px;
+    border-radius: 50%;
+    background: var(--exito);
+    color: #ffffff;
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 88px;
+}
+.enviado-titulo {
+    margin: 0 0 6px;
+    font-size: 26px;
+    font-weight: 800;
+}
+.enviado-detalle {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+}
 
 /* === Confirmación === */
 

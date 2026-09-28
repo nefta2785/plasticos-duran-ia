@@ -57,3 +57,7 @@ class CapturaTianguis(http.Controller):
     @http.route("/captura/api/habituales", type="jsonrpc", auth="user", methods=["POST"])
     def api_habituales(self, cliente_id):
         return self._captura().get_habituales(cliente_id)
+
+    @http.route("/captura/api/enviar", type="jsonrpc", auth="user", methods=["POST"])
+    def api_enviar(self, cliente_id, zona_id, lineas, token):
+        return self._captura().enviar_pedido(cliente_id, zona_id, lineas, token)

@@ -19,7 +19,9 @@
         categorias: $("categorias"),
         contenido: $("contenido"),
         barraPedido: $("barra-pedido"),
+        btnPedido: $("btn-pedido"),
         pedidoConteo: $("pedido-conteo"),
+        pedidoAccion: $("pedido-accion"),
         modal: $("modal"),
         modalTexto: $("modal-texto"),
         modalSi: $("modal-si"),
@@ -27,14 +29,20 @@
     };
 
     const estado = {
-        pantalla: "zonas", // "zonas" | "clientes" | "productos"
+        pantalla: "zonas", // "zonas" | "clientes" | "productos" | "resumen" | "enviado"
         zona: null, // {id, nombre}
         cliente: null, // {id, nombre}
         categoriaId: null, // pestaña activa: id de categoría o PESTANA_HABITUALES
         pedido: new Map(), // id de producto -> cantidad entera (>= 1)
         habituales: [], // "Lo de siempre" del cliente actual
         clienteDibujado: null, // para abrir "Lo de siempre" al llegar a otro cliente
+        token: null, // identifica ESTE pedido ante el servidor (evita duplicados)
+        enviando: false,
+        errorEnvio: null,
+        envio: null, // respuesta del servidor del último pedido enviado
     };
+    // Pantallas donde hay un pedido en curso (salir de ellas lo vacía).
+    const PANTALLAS_PEDIDO = ["productos", "resumen"];
     const PESTANA_HABITUALES = "habituales";
     let catalogo = null; // [{id, nombre, productos: [...]}], se carga una sola vez
     let numeroVista = 0; // para descartar respuestas de una pantalla que ya se dejó
@@ -84,6 +92,13 @@
         return el("ul", { class: "lista" }, ...nodos.map((nodo) => el("li", {}, nodo)));
     }
 
+    function sinRespuesta(mensaje) {
+        // Error sin respuesta clara de Odoo: no se sabe si la petición llegó.
+        const error = new Error(mensaje);
+        error.sinRespuesta = true;
+        return error;
+    }
+
     async function api(ruta, params = {}) {
         let respuesta;
         try {
@@ -94,12 +109,17 @@
                 body: JSON.stringify({ jsonrpc: "2.0", method: "call", id: Date.now(), params }),
             });
         } catch {
-            throw new Error("No hay conexión. Revisa la señal e intenta de nuevo.");
+            throw sinRespuesta("No hay conexión. Revisa la señal e intenta de nuevo.");
         }
         if (!respuesta.ok) {
-            throw new Error(`Odoo no respondió (error ${respuesta.status}). Intenta de nuevo.`);
+            throw sinRespuesta(`Odoo no respondió (error ${respuesta.status}). Intenta de nuevo.`);
         }
-        const datos = await respuesta.json();
+        let datos;
+        try {
+            datos = await respuesta.json();
+        } catch {
+            throw sinRespuesta("Odoo respondió algo inesperado. Intenta de nuevo.");
+        }
         if (datos.error) {
             if (datos.error.code === 100) {
                 // Sesión expirada: de vuelta al login y después a /captura.
@@ -141,7 +161,12 @@
     // === Navegación ===
 
     function fotoHistorial() {
-        return { pantalla: estado.pantalla, zona: estado.zona, cliente: estado.cliente };
+        return {
+            pantalla: estado.pantalla,
+            zona: estado.zona,
+            cliente: estado.cliente,
+            envio: estado.pantalla === "enviado" ? estado.envio : null,
+        };
     }
 
     function irA(pantalla, datos) {
@@ -152,17 +177,17 @@
 
     async function alMoverseEnHistorial(evento) {
         const destino = evento.state || { pantalla: "zonas", zona: null, cliente: null };
-        if (confirmando) {
-            // "Atrás" otra vez mientras se pregunta: se ignora y se queda aquí.
+        if (confirmando || estado.enviando) {
+            // "Atrás" mientras se pregunta o mientras se envía: se queda aquí.
             history.pushState(fotoHistorial(), "");
             return;
         }
         const mismoCliente =
-            destino.pantalla === "productos" &&
+            PANTALLAS_PEDIDO.includes(destino.pantalla) &&
             destino.cliente &&
             estado.cliente &&
             destino.cliente.id === estado.cliente.id;
-        const dejaElPedido = estado.pantalla === "productos" && !mismoCliente;
+        const dejaElPedido = PANTALLAS_PEDIDO.includes(estado.pantalla) && !mismoCliente;
         if (dejaElPedido && estado.pedido.size) {
             const vaciar = await confirmar(
                 `¿Vaciar el pedido de ${estado.cliente.nombre}? ` +
@@ -176,22 +201,34 @@
             }
         }
         if (dejaElPedido) {
-            estado.pedido.clear();
+            vaciarPedido();
         }
         Object.assign(estado, {
             pantalla: destino.pantalla,
             zona: destino.zona,
             cliente: destino.cliente,
+            envio: destino.envio || null,
         });
         dibujar();
     }
 
     function alTocarRegresar() {
+        if (estado.enviando) {
+            return;
+        }
         if (estado.pantalla === "zonas") {
             window.location.href = "/odoo";
+        } else if (estado.pantalla === "enviado") {
+            irA("clientes", { cliente: null }); // al siguiente cliente de la zona
         } else {
             history.back(); // lo resuelve alMoverseEnHistorial
         }
+    }
+
+    function vaciarPedido() {
+        estado.pedido.clear();
+        estado.token = null;
+        estado.errorEnvio = null;
     }
 
     function avisarAntesDeSalir(evento) {
@@ -215,7 +252,7 @@
     }
 
     function mostrar(...nodos) {
-        ui.contenido.replaceChildren(...nodos);
+        ui.contenido.replaceChildren(...nodos.filter(Boolean));
     }
 
     function aviso(texto) {
@@ -246,12 +283,16 @@
     function dibujar() {
         ui.regresar.textContent = estado.pantalla === "zonas" ? "‹ Salir" : "‹ Regresar";
         ui.categorias.hidden = estado.pantalla !== "productos";
-        ui.barraPedido.hidden = estado.pantalla !== "productos";
+        ui.barraPedido.hidden = !PANTALLAS_PEDIDO.includes(estado.pantalla);
         window.scrollTo(0, 0);
         if (estado.pantalla === "zonas") {
             dibujarZonas();
         } else if (estado.pantalla === "clientes") {
             dibujarClientes();
+        } else if (estado.pantalla === "resumen") {
+            dibujarResumen();
+        } else if (estado.pantalla === "enviado") {
+            dibujarEnviado();
         } else {
             dibujarProductos();
         }
@@ -492,12 +533,20 @@
         if (cambio > 0 && navigator.vibrate) {
             navigator.vibrate(15);
         }
+        pedidoCambiado();
         redibujarProducto(producto);
     }
 
     function quitarProducto(producto) {
         estado.pedido.delete(producto.id);
+        pedidoCambiado();
         redibujarProducto(producto);
+    }
+
+    function pedidoCambiado() {
+        // Un pedido distinto es un envío distinto: token nuevo al enviar.
+        estado.token = null;
+        estado.errorEnvio = null;
     }
 
     function redibujarProducto(producto) {
@@ -513,15 +562,174 @@
 
     function actualizarPedido() {
         const productos = totalPedido();
+        const enResumen = estado.pantalla === "resumen";
         ui.pedidoConteo.textContent = productos
             ? `${plural(productos, "producto", "productos")} en el pedido`
             : "Pedido vacío";
+        ui.pedidoAccion.hidden = !productos;
+        if (estado.enviando) {
+            ui.pedidoAccion.textContent = "Enviando…";
+        } else {
+            ui.pedidoAccion.textContent = enResumen ? "✓ Enviar pedido" : "Revisar pedido ›";
+        }
+        ui.btnPedido.disabled = !productos || estado.enviando;
         ui.barraPedido.classList.toggle("con-productos", productos > 0);
+        ui.barraPedido.classList.toggle("para-enviar", enResumen && productos > 0);
+    }
+
+    function alTocarBarraPedido() {
+        if (estado.pantalla === "productos") {
+            irA("resumen", {});
+        } else if (estado.pantalla === "resumen") {
+            enviarPedido();
+        }
+    }
+
+    // === Pantalla: Resumen ===
+
+    function lineasDelPedido() {
+        // En el orden del catálogo (por categoría), no en el orden de los toques.
+        const lineas = [];
+        for (const categoria of catalogo || []) {
+            for (const producto of categoria.productos) {
+                const cantidad = estado.pedido.get(producto.id);
+                if (cantidad) {
+                    lineas.push({ producto, cantidad });
+                }
+            }
+        }
+        return lineas;
+    }
+
+    function dibujarResumen() {
+        ponerTitulo(estado.cliente.nombre, estado.zona && estado.zona.nombre);
+        nuevaVista();
+        actualizarPedido();
+        const lineas = lineasDelPedido();
+        if (!lineas.length) {
+            mostrar(
+                aviso("El pedido está vacío."),
+                el("button", {
+                    type: "button",
+                    class: "btn btn-primario",
+                    text: "‹ Agregar productos",
+                    onclick: alTocarRegresar,
+                })
+            );
+            return;
+        }
+        mostrar(
+            el("p", { class: "pregunta", text: "Revisa el pedido" }),
+            lista(
+                lineas.map(({ producto, cantidad }) =>
+                    el(
+                        "div",
+                        { class: "resumen-linea" },
+                        el("span", { class: "resumen-nombre", text: producto.nombre }),
+                        el("span", { class: "resumen-cantidad", text: `${cantidad} ${producto.unidad}` })
+                    )
+                )
+            ),
+            estado.errorEnvio
+                ? el("p", { class: "error-envio", role: "alert", text: estado.errorEnvio })
+                : null,
+            el("p", { class: "nota", text: "Para cambiar algo, toca Regresar." })
+        );
+    }
+
+    function nuevoToken() {
+        // crypto.getRandomValues funciona también en http:// (el celular en
+        // la WiFi); crypto.randomUUID solo en https.
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function enviarPedido() {
+        const lineas = lineasDelPedido();
+        if (estado.enviando || !lineas.length) {
+            return;
+        }
+        estado.enviando = true; // antes de cualquier await: bloquea el doble toque
+        estado.errorEnvio = null;
+        estado.token = estado.token || nuevoToken();
+        dibujarResumen();
+        let envio;
+        try {
+            envio = await api("/captura/api/enviar", {
+                cliente_id: estado.cliente.id,
+                zona_id: estado.zona.id,
+                token: estado.token,
+                lineas: lineas.map(({ producto, cantidad }) => ({ producto_id: producto.id, cantidad })),
+            });
+        } catch (error) {
+            estado.enviando = false;
+            estado.errorEnvio = error.sinRespuesta
+                ? "No se pudo confirmar si el pedido llegó. Toca «Enviar pedido» otra vez: " +
+                  "si ya había llegado, no se duplica."
+                : `No se envió el pedido: ${error.message}`;
+            dibujarResumen();
+            return;
+        }
+        estado.enviando = false;
+        vaciarPedido();
+        estado.envio = envio;
+        estado.pantalla = "enviado";
+        // Reemplaza el Resumen en el historial: "atrás" ya no regresa a él.
+        history.replaceState(fotoHistorial(), "");
+        dibujar();
+    }
+
+    // === Pantalla: Pedido enviado ===
+
+    function dibujarEnviado() {
+        nuevaVista();
+        const envio = estado.envio;
+        ponerTitulo("Pedido enviado", estado.zona && estado.zona.nombre);
+        if (!envio || !estado.zona) {
+            mostrar(
+                aviso("Pedido enviado."),
+                el("button", {
+                    type: "button",
+                    class: "btn btn-primario",
+                    text: "Ir a zonas",
+                    onclick: () => irA("zonas", { zona: null, cliente: null }),
+                })
+            );
+            return;
+        }
+        mostrar(
+            el(
+                "div",
+                { class: "enviado", role: "status" },
+                el("p", { class: "enviado-marca", "aria-hidden": "true", text: "✓" }),
+                el("p", { class: "enviado-titulo", text: `Pedido ${envio.nombre} enviado` }),
+                el("p", {
+                    class: "enviado-detalle",
+                    text: `${envio.cliente} · ${plural(envio.productos, "producto", "productos")}`,
+                })
+            ),
+            lista([
+                el("button", {
+                    type: "button",
+                    class: "btn btn-primario",
+                    text: `Siguiente cliente de ${estado.zona.nombre}`,
+                    onclick: () => irA("clientes", { cliente: null }),
+                }),
+                el("button", {
+                    type: "button",
+                    class: "btn btn-secundario",
+                    text: "Cambiar de zona",
+                    onclick: () => irA("zonas", { zona: null, cliente: null }),
+                }),
+            ])
+        );
     }
 
     // === Arranque ===
 
     ui.regresar.addEventListener("click", alTocarRegresar);
+    ui.btnPedido.addEventListener("click", alTocarBarraPedido);
     window.addEventListener("popstate", alMoverseEnHistorial);
     window.addEventListener("beforeunload", avisarAntesDeSalir);
     window.addEventListener("resize", medirBarra);
