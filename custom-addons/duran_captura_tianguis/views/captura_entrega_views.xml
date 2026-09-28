@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="captura_entrega_view_list" model="ir.ui.view">
+        <field name="name">duran.captura.entrega.list</field>
+        <field name="model">duran.captura.entrega</field>
+        <field name="arch" type="xml">
+            <list string="Entregas en tianguis" create="false" edit="false" delete="false">
+                <field name="fecha"/>
+                <field name="partner_id"/>
+                <field name="zona_id"/>
+                <field name="user_id" widget="many2one_avatar_user" optional="show"/>
+                <field name="order_ids" widget="many2many_tags" optional="show"/>
+                <field name="currency_id" column_invisible="True"/>
+                <field name="total" sum="Total"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="captura_entrega_view_form" model="ir.ui.view">
+        <field name="name">duran.captura.entrega.form</field>
+        <field name="model">duran.captura.entrega</field>
+        <field name="arch" type="xml">
+            <form string="Entrega en tianguis" create="false" edit="false" delete="false">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id"/>
+                            <field name="zona_id"/>
+                            <field name="user_id" widget="many2one_avatar_user"/>
+                        </group>
+                        <group>
+                            <field name="fecha"/>
+                            <field name="currency_id" invisible="True"/>
+                            <field name="total"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Productos" name="productos">
+                            <field name="linea_ids">
+                                <list>
+                                    <field name="product_id"/>
+                                    <field name="cantidad"/>
+                                    <field name="peso_real"/>
+                                    <field name="precio_unitario"/>
+                                    <field name="currency_id" column_invisible="True"/>
+                                    <field name="importe" sum="Total"/>
+                                    <field name="sin_existencia"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Documentos" name="documentos">
+                            <group>
+                                <field name="order_ids" widget="many2many_tags"/>
+                                <field name="picking_ids" widget="many2many_tags"/>
+                            </group>
+                        </page>
+                        <page string="Notas" name="notas" invisible="not nota">
+                            <field name="nota"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="captura_entrega_view_search" model="ir.ui.view">
+        <field name="name">duran.captura.entrega.search</field>
+        <field name="model">duran.captura.entrega</field>
+        <field name="arch" type="xml">
+            <search string="Entregas en tianguis">
+                <field name="partner_id"/>
+                <field name="zona_id"/>
+                <field name="user_id"/>
+                <field name="order_ids"/>
+                <filter string="Mis entregas" name="mis_entregas" domain="[('user_id', '=', uid)]"/>
+                <separator/>
+                <filter string="Fecha" name="filtro_fecha" date="fecha"/>
+                <group>
+                    <filter string="Zona" name="agrupar_zona" context="{'group_by': 'zona_id'}"/>
+                    <filter string="Entregó" name="agrupar_usuario" context="{'group_by': 'user_id'}"/>
+                    <filter string="Día" name="agrupar_dia" context="{'group_by': 'fecha:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="captura_entrega_action" model="ir.actions.act_window">
+        <field name="name">Entregas en tianguis</field>
+        <field name="res_model">duran.captura.entrega</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Todavía no hay entregas en tianguis</p>
+            <p>Aquí aparece cada entrega confirmada desde la pantalla de captura (modo Entrega).</p>
+        </field>
+    </record>
+
+    <menuitem id="captura_entrega_menu"
+        name="Entregas en tianguis"
+        parent="sale.sale_order_menu"
+        action="captura_entrega_action"
+        groups="sales_team.group_sale_manager,group_captura_tianguis"
+        sequence="25"/>
+
+</odoo>
