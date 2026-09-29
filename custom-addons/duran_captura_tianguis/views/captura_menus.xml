@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- App "Captura" en el menú de Odoo: abre la pantalla /captura en la misma
+         pestaña. Es el camino de regreso para quien llega a Odoo desde la app.
+         Secuencia alta: la primera app es la que Odoo abre en /odoo sin acción,
+         y los gerentes y administradores deben seguir entrando a Odoo normal. -->
+    <record id="captura_action_url" model="ir.actions.act_url">
+        <field name="name">Captura</field>
+        <field name="url">/captura</field>
+        <field name="target">self</field>
+    </record>
+
+    <menuitem id="captura_menu_root"
+        name="Captura"
+        action="captura_action_url"
+        groups="group_captura_tianguis"
+        sequence="100"/>
+
+</odoo>

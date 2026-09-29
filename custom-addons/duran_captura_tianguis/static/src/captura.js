@@ -14,6 +14,9 @@
     "use strict";
 
     const $ = (id) => document.getElementById(id);
+    // Lo decide el servidor: el usuario de tianguis no tiene "Salir" (su
+    // inicio es esta pantalla y su sesión se queda abierta).
+    const puedeSalir = document.body.dataset.salir === "1";
     const ui = {
         barra: document.querySelector(".barra"),
         regresar: $("btn-regresar"),
@@ -234,7 +237,9 @@
             return;
         }
         if (estado.pantalla === "inicio") {
-            window.location.href = "/odoo";
+            if (puedeSalir) {
+                window.location.href = "/odoo";
+            }
         } else if (estado.pantalla === "zonas") {
             // Directo al Inicio (para cambiar de modo): por historial pasaría
             // antes por las pantallas de "enviado" o "entregado".
@@ -305,6 +310,7 @@
 
     function dibujar() {
         ui.regresar.textContent = estado.pantalla === "inicio" ? "‹ Salir" : "‹ Regresar";
+        ui.regresar.hidden = estado.pantalla === "inicio" && !puedeSalir;
         ui.categorias.hidden = estado.pantalla !== "productos";
         ui.barraPedido.hidden = !PANTALLAS_PEDIDO.concat(PANTALLAS_ENTREGA).includes(estado.pantalla);
         window.scrollTo(0, 0);

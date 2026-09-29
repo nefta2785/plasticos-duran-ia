@@ -4,7 +4,7 @@
 
 async function pasoInicio() {
     check("Inicio: título", txt("#titulo"), "Captura");
-    check("Inicio: botón superior dice Salir", txt("#btn-regresar"), "‹ Salir");
+    check("Inicio (administrador): botón superior dice Salir y se ve", [txt("#btn-regresar"), q("#btn-regresar").hidden], ["‹ Salir", false]);
     check("Inicio: pregunta", txt(".pregunta"), "¿Qué vas a hacer?");
     check(
         "Inicio: tres modos, Pedido, Entrega y Cobro",
@@ -844,6 +844,24 @@ async function pasoCobroTodoYNada() {
     check("Cambiar de zona: Zonas de Cobro", [txt("#titulo"), txt("#subtitulo")], ["Zonas", "Cobro"]);
 }
 
+// === Usuario de tianguis (sin data-salir en <body>) ===
+
+async function pasoTianguisSinSalir() {
+    await espera(80);
+    check("Tianguis: Inicio sin botón Salir", [txt("#titulo"), q("#btn-regresar").hidden, !!boton("‹ Salir")], ["Captura", true, false]);
+    checkAncho("Inicio de tianguis");
+    q("#btn-regresar").click(); // aunque se tocara, no sale de la pantalla
+    await espera(120);
+    check("Tianguis: tocar el botón escondido no sale de Inicio", [location.pathname.endsWith("tianguis.html"), txt("#titulo")], [true, "Captura"]);
+    modo("Pedido").click();
+    await espera(80);
+    check("Tianguis: en Zonas sí hay «Regresar»", [txt("#titulo"), q("#btn-regresar").hidden, txt("#btn-regresar")], ["Zonas", false, "‹ Regresar"]);
+    await regresar();
+    check("Tianguis: de vuelta en Inicio, otra vez sin botón", [txt("#titulo"), q("#btn-regresar").hidden], ["Captura", true]);
+}
+
+const PASOS_TIANGUIS = [pasoTianguisSinSalir];
+
 const PASOS = [
     pasoInicio, pasoZonas, pasoClientes, pasoProductos, pasoConfirmarAntesDeVaciar, pasoLoDeSiempre,
     pasoResumen, pasoEnviar, pasoEntregaClientes, pasoEntregaLista, pasoEntregaResumen,
@@ -858,7 +876,7 @@ window.addEventListener("load", async () => {
     const limite = new Promise((resolver) => setTimeout(() => resolver("tiempo"), 45000));
     const recorrido = (async () => {
         await espera(80);
-        for (const paso of PASOS) {
+        for (const paso of document.body.dataset.salir === "1" ? PASOS : PASOS_TIANGUIS) {
             pasoActual = paso.name;
             await paso();
             checkAncho(`al terminar ${paso.name} (${txt("#titulo")})`);

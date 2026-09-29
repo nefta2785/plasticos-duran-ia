@@ -76,3 +76,16 @@ en Odoo.
 **Un cobro no se puede deshacer desde la app.** Si se registró mal (por ejemplo, otra cantidad),
 hay que corregirlo en Odoo. El cobro equivocado **sigue apareciendo** en "Cobros en tianguis", así
 que al hacer el corte tómenlo en cuenta.
+
+## 7. Si se pierde un celular
+
+La app se queda con la sesión abierta en el celular, para no tener que volver a escribir la
+contraseña. Por eso, **si se pierde o se roban un celular, cambien de inmediato la contraseña de
+ese usuario** desde Odoo:
+
+1. Ajustes › Usuarios y empresas › Usuarios.
+2. Abrir el usuario del celular perdido.
+3. En el menú **Acciones** (el engrane), tocar **Cambiar contraseña** y poner una nueva.
+
+Al cambiar la contraseña, **el celular perdido queda fuera**: la próxima vez que alguien intente
+usar la app en ese celular, le pedirá la contraseña nueva.

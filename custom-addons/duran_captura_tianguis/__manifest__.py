@@ -23,6 +23,7 @@ Cobros en tianguis).
         "views/captura_entrega_views.xml",
         "views/captura_cobro_views.xml",
         "views/captura_templates.xml",
+        "views/captura_menus.xml",
     ],
     "installable": True,
     "application": False,

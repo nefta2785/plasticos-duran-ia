@@ -13,7 +13,7 @@
         <link rel="stylesheet" t-attf-href="/duran_captura_tianguis/static/src/captura.css?v=#{version}"/>
         <script t-attf-src="/duran_captura_tianguis/static/src/captura.js?v=#{version}" defer="defer"></script>
     </head>
-    <body>
+    <body t-att-data-salir="'1' if puede_salir else None">
         <header class="barra">
             <button type="button" id="btn-regresar" class="btn-regresar">‹ Regresar</button>
             <div class="barra-textos">

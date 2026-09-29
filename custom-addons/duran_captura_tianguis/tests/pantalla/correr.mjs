@@ -30,8 +30,15 @@ if (!existsSync(chrome)) {
 
 const url = (ruta) => pathToFileURL(ruta).href;
 const plantilla = readFileSync(join(modulo, "views", "captura_templates.xml"), "utf8");
-const body = plantilla.slice(plantilla.indexOf("<body>"), plantilla.indexOf("</body>") + "</body>".length);
-const html = `<!DOCTYPE html>
+const body = plantilla.slice(plantilla.indexOf("<body"), plantilla.indexOf("</body>") + "</body>".length);
+// El servidor decide si hay botón "Salir" (data-salir en <body>): la página se
+// arma dos veces, como la ve un administrador y como la ve el usuario de tianguis.
+const ETIQUETA_BODY = `<body t-att-data-salir="'1' if puede_salir else None">`;
+if (!body.startsWith(ETIQUETA_BODY)) {
+    console.error(`La plantilla ya no empieza el <body> con: ${ETIQUETA_BODY}\nActualiza correr.mjs.`);
+    process.exit(1);
+}
+const pagina = (etiqueta) => `<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="utf-8"/>
@@ -41,31 +48,49 @@ const html = `<!DOCTYPE html>
     <script src="${url(join(aqui, "escenario.js"))}"></script>
     <script src="${url(join(modulo, "static", "src", "captura.js"))}" defer="defer"></script>
 </head>
-${body}
+${etiqueta}${body.slice(ETIQUETA_BODY.length)}
 </html>`;
 
 // Chrome sin ventana no dibuja a menos de 500 px de ancho aunque se le pida
 // --window-size=393: la página se carga dentro de un marco (iframe) del tamaño
 // exacto del iPhone 16, 393 x 852, que sí es su ancho real de pantalla. El
-// marco copia los resultados a la página de afuera para --dump-dom.
+// marco copia los resultados a la página de afuera para --dump-dom. Hay un
+// marco por cada forma de la página, uno después del otro; los resultados se
+// juntan.
 const ANCHO = 393;
 const ALTO = 852;
 const marco = `<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="utf-8"/></head>
 <body style="margin: 0">
-    <iframe id="celular" src="captura.html" style="display: block; width: ${ANCHO}px; height: ${ALTO}px; border: 0"></iframe>
     <script>
-        const revisar = setInterval(() => {
-            const resultado = document.getElementById("celular").contentDocument?.getElementById("resultado-prueba");
-            if (resultado) {
-                clearInterval(revisar);
-                const copia = document.createElement("pre");
-                copia.id = "resultado-prueba";
-                copia.textContent = resultado.textContent;
-                document.body.append(copia);
-            }
-        }, 100);
+        // Una forma de la página a la vez: los marcos de una misma página
+        // comparten el historial ("atrás") y se estorbarían.
+        const paginas = ["captura.html", "tianguis.html"];
+        const textos = [];
+        function siguiente() {
+            const marco = document.createElement("iframe");
+            marco.src = paginas[textos.length];
+            marco.style.cssText = "display: block; width: ${ANCHO}px; height: ${ALTO}px; border: 0";
+            document.body.append(marco);
+            const revisar = setInterval(() => {
+                const resultado = marco.contentDocument?.getElementById("resultado-prueba");
+                if (resultado) {
+                    clearInterval(revisar);
+                    textos.push(resultado.textContent);
+                    marco.remove();
+                    if (textos.length < paginas.length) {
+                        siguiente();
+                    } else {
+                        const copia = document.createElement("pre");
+                        copia.id = "resultado-prueba";
+                        copia.textContent = textos.join("\\n");
+                        document.body.append(copia);
+                    }
+                }
+            }, 100);
+        }
+        siguiente();
     </script>
 </body>
 </html>`;
@@ -73,9 +98,10 @@ const marco = `<!DOCTYPE html>
 const temporal = mkdtempSync(join(tmpdir(), "captura-pantalla-"));
 let dom;
 try {
-    writeFileSync(join(temporal, "captura.html"), html);
-    const pagina = join(temporal, "marco.html");
-    writeFileSync(pagina, marco);
+    writeFileSync(join(temporal, "captura.html"), pagina('<body data-salir="1">')); // administrador o gerente
+    writeFileSync(join(temporal, "tianguis.html"), pagina("<body>")); // usuario de tianguis
+    const rutaMarco = join(temporal, "marco.html");
+    writeFileSync(rutaMarco, marco);
     dom = execFileSync(
         chrome,
         [
@@ -90,7 +116,7 @@ try {
             "--window-size=500,900", // el ancho de celular lo da el marco (ver arriba)
             "--virtual-time-budget=60000",
             "--dump-dom",
-            url(pagina),
+            url(rutaMarco),
         ],
         {
             encoding: "utf8",

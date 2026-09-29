@@ -3,15 +3,41 @@ import os
 from werkzeug.exceptions import Forbidden
 
 from odoo import _, http
+from odoo.addons.web.controllers.home import Home
 from odoo.exceptions import AccessError
 from odoo.http import request
 from odoo.tools.misc import file_path
 
 GRUPO_CAPTURA = "duran_captura_tianguis.group_captura_tianguis"
+GRUPO_GERENTE_VENTAS = "sales_team.group_sale_manager"
 ARCHIVOS_ESTATICOS = (
     "duran_captura_tianguis/static/src/captura.css",
     "duran_captura_tianguis/static/src/captura.js",
 )
+
+
+def es_usuario_tianguis(usuario):
+    """ Usuario solo de tianguis: con el grupo "Captura tianguis" y sin ser
+    gerente de Ventas ni administrador (`_is_admin` incluye a Ajustes, que
+    implica "Permisos de acceso"). Su inicio es /captura. """
+    usuario = usuario.sudo()
+    return (
+        usuario.has_group(GRUPO_CAPTURA)
+        and not usuario.has_group(GRUPO_GERENTE_VENTAS)
+        and not usuario._is_admin()
+    )
+
+
+class CapturaHome(Home):
+
+    def _login_redirect(self, uid, redirect=None):
+        """ Después de iniciar sesión, el usuario de tianguis siempre llega a
+        /captura, venga de donde venga (p. ej. con ?redirect=/odoo/discuss).
+        Con la sesión a medias (segundo factor) se deja lo de Odoo. """
+        url = super()._login_redirect(uid, redirect=redirect)
+        if request.session.uid and es_usuario_tianguis(request.env["res.users"].browse(uid)):
+            return "/captura"
+        return url
 
 
 class CapturaTianguis(http.Controller):
@@ -40,6 +66,8 @@ class CapturaTianguis(http.Controller):
             raise Forbidden()
         return request.render("duran_captura_tianguis.captura_page", {
             "version": self._version_estaticos(),
+            # El usuario de tianguis no ve "Salir": no sale a Odoo ni cierra sesión.
+            "puede_salir": not es_usuario_tianguis(request.env.user),
         })
 
     @http.route("/captura/api/zonas", type="jsonrpc", auth="user", methods=["POST"])
