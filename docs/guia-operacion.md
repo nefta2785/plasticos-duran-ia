@@ -69,6 +69,9 @@ cliente quiere cambiar un rollo o un producto, primero tiene que estar en una fa
 sola al cobrarle con la app, aunque sea con "No pagó hoy"). Después ya se puede hacer el cambio
 en Odoo.
 
+**Las entregas de rollos se registran siempre desde la app.** No validen entregas de rollos
+desde Odoo: la app es la que pide el peso de cada rollo y con ese peso se cobra.
+
 **Al dar de alta un producto o cambiarle el Tipo**, revisen en la pestaña Información general:
 
 - "Política de facturación" debe decir **Cantidades entregadas**. Si le cambian el Tipo al
@@ -92,3 +95,38 @@ ese usuario** desde Odoo:
 
 Al cambiar la contraseña, **el celular perdido queda fuera**: la próxima vez que alguien intente
 usar la app en ese celular, le pedirá la contraseña nueva.
+
+## 8. Hoja de carga (para el papá)
+
+Sirve para saber **cuánto cargar de cada producto** mientras la mamá sigue levantando pedidos.
+
+**Dónde está:** en Odoo, **Ventas › Órdenes › Hoja de carga**. Solo la ven el papá y el
+administrador.
+
+**Qué muestra:** un renglón por producto con el total que falta entregar, en la columna
+**Demanda**, y su **Unidad** (kg, o "Unidades" para los rollos y las piezas).
+
+- Aparece **todo lo que falta entregar**, también lo de días anteriores que no se entregó y lo
+  que Odoo marca sin existencia.
+- **No** aparece lo ya entregado ni lo cancelado.
+
+**Para ver los pedidos nuevos:** vuelvan a tocar **Hoja de carga** en el menú (o recarguen la
+página). Cada vez que la abren, trae lo que la mamá haya enviado hasta ese momento.
+
+**Solo lo de hoy o solo lo atrasado:** en la barra de búsqueda, abran el menú de filtros (la
+flecha junto a la lupa) y escojan:
+
+- **Hoy**: solo los pedidos levantados hoy.
+- **Días anteriores**: solo lo atrasado, de pedidos de otros días.
+- Sin ninguno de los dos: todo lo pendiente.
+
+**Por zona:**
+
+- Para ver una sola zona, escriban el nombre de la zona en la barra de búsqueda y escojan la
+  opción **Zona**.
+- Para ver todas las zonas separadas, en el mismo menú de filtros, en **Agrupar por**, escojan
+  **Zona**. Los pedidos hechos en Odoo sin zona salen en el grupo **Ninguno**.
+- Para distinguir lo atrasado, en **Agrupar por** escojan **Fecha del pedido**.
+
+Para volver a la vista normal, quiten los filtros con la **x** de la barra de búsqueda y dejen
+**Agrupar por › Producto**.

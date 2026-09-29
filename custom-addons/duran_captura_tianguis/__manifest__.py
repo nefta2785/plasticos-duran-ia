@@ -22,6 +22,7 @@ Cobros en tianguis).
         "views/sale_order_views.xml",
         "views/captura_entrega_views.xml",
         "views/captura_cobro_views.xml",
+        "views/hoja_carga_views.xml",
         "views/captura_templates.xml",
         "views/captura_menus.xml",
     ],

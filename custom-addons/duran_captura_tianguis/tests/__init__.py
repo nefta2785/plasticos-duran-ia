@@ -5,6 +5,7 @@ from . import test_cobro_confirmar
 from . import test_cobro_lectura
 from . import test_cobro_pago
 from . import test_entrega_confirmar
+from . import test_hoja_carga
 from . import test_inicio
 from . import test_entrega_lectura
 from . import test_entrega_vista_previa

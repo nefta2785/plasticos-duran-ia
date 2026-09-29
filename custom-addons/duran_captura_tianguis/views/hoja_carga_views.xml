@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Hoja de carga: lo pendiente de entregar, por producto. Lista de 3
+         columnas para que quepa en el celular. La Demanda es `product_qty`,
+         ya convertida a la unidad del producto (se puede sumar). -->
+    <record id="hoja_carga_view_list" model="ir.ui.view">
+        <field name="name">stock.move.hoja.carga.list</field>
+        <field name="model">stock.move</field>
+        <field name="priority">100</field>
+        <field name="arch" type="xml">
+            <list string="Hoja de carga" create="false" edit="false" delete="false">
+                <field name="product_id"/>
+                <field name="product_qty" string="Demanda" sum="Total"/>
+                <field name="unidad_producto_id" string="Unidad"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="hoja_carga_view_search" model="ir.ui.view">
+        <field name="name">stock.move.hoja.carga.search</field>
+        <field name="model">stock.move</field>
+        <field name="priority">100</field>
+        <field name="arch" type="xml">
+            <search string="Hoja de carga">
+                <field name="product_id"/>
+                <field name="zona_id"/>
+                <!-- 'today' es el día de hoy en la zona horaria de quien consulta. -->
+                <filter string="Hoy" name="hoy" domain="[('fecha_pedido', '&gt;=', 'today'), ('fecha_pedido', '&lt;', 'today +1d')]"/>
+                <filter string="Días anteriores" name="dias_anteriores" domain="[('fecha_pedido', '&lt;', 'today')]"/>
+                <group>
+                    <filter string="Producto" name="agrupar_producto" context="{'group_by': 'product_id'}"/>
+                    <filter string="Zona" name="agrupar_zona" context="{'group_by': 'zona_id'}"/>
+                    <filter string="Fecha del pedido" name="agrupar_fecha_pedido" context="{'group_by': 'fecha_pedido:day'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Pendiente = misma regla que el modo Entrega (duran.captura,
+         _entregas_pendientes): entregas de venta a cliente, que no son
+         devoluciones, en movimientos sin validar ni cancelar (incluye los
+         "sin existencia" y los parcialmente disponibles). Sin filtro de día:
+         también sale lo atrasado. -->
+    <record id="hoja_carga_action" model="ir.actions.act_window">
+        <field name="name">Hoja de carga</field>
+        <field name="res_model">stock.move</field>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="hoja_carga_view_list"/>
+        <field name="search_view_id" ref="hoja_carga_view_search"/>
+        <field name="domain">[
+            ('picking_id.picking_type_code', '=', 'outgoing'),
+            ('location_dest_id.usage', '=', 'customer'),
+            ('picking_id.sale_id', '!=', False),
+            ('picking_id.return_id', '=', False),
+            ('state', 'not in', ('draft', 'done', 'cancel')),
+        ]</field>
+        <field name="context">{'search_default_agrupar_producto': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No hay nada pendiente de cargar</p>
+            <p>Aquí aparece, por producto, todo lo pedido que falta por entregar.</p>
+        </field>
+    </record>
+
+    <menuitem id="hoja_carga_menu"
+        name="Hoja de carga"
+        parent="sale.sale_order_menu"
+        action="hoja_carga_action"
+        groups="sales_team.group_sale_manager"
+        sequence="27"/>
+
+</odoo>
