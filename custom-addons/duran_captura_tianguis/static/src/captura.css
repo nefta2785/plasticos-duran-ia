@@ -586,3 +586,47 @@ button {
     font-size: 18px;
     font-weight: 600;
 }
+
+/* === Modo Cobro === */
+
+.aviso-cobro {
+    margin: 0 0 16px;
+    padding: 14px 16px;
+    border: 3px solid var(--texto-suave);
+    border-radius: var(--radio);
+    font-size: 20px;
+    font-weight: 700;
+}
+.aviso-cobro.bloquea {
+    border-color: var(--peligro);
+    background: #fde8ec;
+    color: var(--peligro);
+    font-weight: 800;
+}
+.cobro-credito .resumen-importe { color: var(--exito); }
+.total-cobro .total-monto { font-size: 40px; }
+.acciones-cobro { margin-top: 24px; }
+.btn-pago-todo {
+    min-height: 88px;
+    background: var(--exito);
+    border-color: var(--exito);
+    font-size: 28px;
+    font-weight: 900;
+}
+.btn-pago-todo:active { background: #064d1f; }
+.btn-registrar-cobro {
+    margin-top: 20px;
+    min-height: 76px;
+    background: var(--exito);
+    border-color: var(--exito);
+    font-size: 26px;
+    font-weight: 900;
+}
+.btn-registrar-cobro:disabled { opacity: 0.6; }
+.monto-eco { margin: 10px 0 16px; }
+.queda-debiendo {
+    margin: 0 0 8px;
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--peligro);
+}

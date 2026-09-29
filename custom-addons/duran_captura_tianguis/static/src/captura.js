@@ -1,6 +1,7 @@
 /* Captura tianguis. Inicio → modo Pedido (Zona → Cliente → Productos →
- * Resumen → Enviado, con el pedido en memoria) o modo Entrega (Zona → Cliente
- * con entregas pendientes → Lo pendiente → Resumen → Entregado).
+ * Resumen → Enviado, con el pedido en memoria), modo Entrega (Zona → Cliente
+ * con entregas pendientes → Lo pendiente → Resumen → Entregado) o modo Cobro
+ * (Zona → Cliente con algo por cobrar → Lo que debe → Confirmación → Cobrado).
  *
  * JavaScript sin frameworks. Los datos vienen de las rutas jsonrpc de
  * controllers/main.py. Todo texto que viene de Odoo se pinta con textContent
@@ -33,8 +34,9 @@
     const estado = {
         // "inicio" | "zonas" | "clientes" | "productos" | "resumen" | "enviado"
         // | "entrega" | "entrega-resumen" | "entregado"
+        // | "cobro" | "cobro-confirmar" | "cobrado"
         pantalla: "inicio",
-        modo: null, // "pedido" | "entrega"
+        modo: null, // "pedido" | "entrega" | "cobro"
         zona: null, // {id, nombre}
         cliente: null, // {id, nombre}
         categoriaId: null, // pestaña activa: id de categoría o PESTANA_HABITUALES
@@ -46,6 +48,7 @@
         errorEnvio: null,
         envio: null, // respuesta del servidor del último pedido enviado
         entregado: null, // respuesta del servidor de la última entrega confirmada
+        cobrado: null, // respuesta del servidor del último cobro registrado
         revisando: false, // pidiendo la vista previa de la entrega
     };
     // Pantallas donde hay un pedido en curso (salir de ellas lo vacía).
@@ -176,6 +179,7 @@
             cliente: estado.cliente,
             envio: estado.pantalla === "enviado" ? estado.envio : null,
             entregado: estado.pantalla === "entregado" ? estado.entregado : null,
+            cobrado: estado.pantalla === "cobrado" ? estado.cobrado : null,
         };
     }
 
@@ -220,6 +224,7 @@
             cliente: destino.cliente,
             envio: destino.envio || null,
             entregado: destino.entregado || null,
+            cobrado: destino.cobrado || null,
         });
         dibujar();
     }
@@ -234,7 +239,7 @@
             // Directo al Inicio (para cambiar de modo): por historial pasaría
             // antes por las pantallas de "enviado" o "entregado".
             irA("inicio", { modo: null, zona: null, cliente: null });
-        } else if (estado.pantalla === "enviado" || estado.pantalla === "entregado") {
+        } else if (["enviado", "entregado", "cobrado"].includes(estado.pantalla)) {
             irA("clientes", { cliente: null }); // al siguiente cliente de la zona
         } else {
             history.back(); // lo resuelve alMoverseEnHistorial
@@ -248,8 +253,9 @@
     }
 
     function avisarAntesDeSalir(evento) {
-        // Recargar o cerrar la página perdería el pedido o lo capturado de una entrega.
-        if (estado.pedido.size || hayEntregaSinConfirmar()) {
+        // Recargar o cerrar la página perdería el pedido, lo capturado de una
+        // entrega o el monto de un cobro.
+        if (estado.pedido.size || hayEntregaSinConfirmar() || hayCobroSinConfirmar()) {
             evento.preventDefault();
             evento.returnValue = "";
         }
@@ -318,6 +324,12 @@
             dibujarEntregaResumen();
         } else if (estado.pantalla === "entregado") {
             dibujarEntregado();
+        } else if (estado.pantalla === "cobro") {
+            dibujarCobro();
+        } else if (estado.pantalla === "cobro-confirmar") {
+            dibujarConfirmarCobro();
+        } else if (estado.pantalla === "cobrado") {
+            dibujarCobrado();
         } else {
             dibujarProductos();
         }
@@ -351,8 +363,9 @@
                 botonModo("🚚", "Entrega", "Entregar lo que ya pidieron", () =>
                     irA("zonas", { modo: "entrega", zona: null, cliente: null })
                 ),
-                // Cobro: deshabilitado hasta construir sus pantallas.
-                botonModo("💵", "Cobro", "Cobrar lo entregado y lo pendiente", null),
+                botonModo("💵", "Cobro", "Cobrar lo entregado y lo pendiente", () =>
+                    irA("zonas", { modo: "cobro", zona: null, cliente: null })
+                ),
             ])
         );
     }
@@ -360,7 +373,7 @@
     // === Pantalla: Zonas ===
 
     async function dibujarZonas() {
-        ponerTitulo("Zonas", estado.modo === "entrega" ? "Entrega" : "Pedido");
+        ponerTitulo("Zonas", { entrega: "Entrega", cobro: "Cobro" }[estado.modo] || "Pedido");
         const vista = nuevaVista();
         mostrar(aviso("Cargando zonas…"));
         let zonas;
@@ -401,12 +414,17 @@
         const vista = nuevaVista();
         mostrar(aviso("Cargando clientes…"));
         const entrega = estado.modo === "entrega";
+        const cobrando = estado.modo === "cobro";
         let clientes;
         try {
-            // En Entrega solo los clientes con entregas pendientes.
-            clientes = await api(entrega ? "/captura/api/entrega/clientes" : "/captura/api/clientes", {
-                zona_id: estado.zona.id,
-            });
+            // En Entrega solo los clientes con entregas pendientes; en Cobro,
+            // los que tienen algo por cobrar.
+            const ruta = entrega
+                ? "/captura/api/entrega/clientes"
+                : cobrando
+                  ? "/captura/api/cobro/clientes"
+                  : "/captura/api/clientes";
+            clientes = await api(ruta, { zona_id: estado.zona.id });
         } catch (error) {
             if (vigente(vista)) {
                 mostrarError(error, dibujarClientes);
@@ -418,7 +436,13 @@
         }
         if (!clientes.length) {
             mostrar(
-                aviso(entrega ? "Nadie de esta zona tiene entregas pendientes" : "Esta zona no tiene clientes"),
+                aviso(
+                    entrega
+                        ? "Nadie de esta zona tiene entregas pendientes"
+                        : cobrando
+                          ? "Nadie de esta zona tiene algo por cobrar"
+                          : "Esta zona no tiene clientes"
+                ),
                 el("button", {
                     type: "button",
                     class: "btn btn-primario",
@@ -436,7 +460,7 @@
                         type: "button",
                         class: "btn",
                         text: cliente.nombre,
-                        onclick: () => irA(entrega ? "entrega" : "productos", { cliente }),
+                        onclick: () => irA(entrega ? "entrega" : cobrando ? "cobro" : "productos", { cliente }),
                     })
                 )
             )
@@ -1403,6 +1427,381 @@
                         })
                     )
                 )
+            ),
+            lista([
+                el("button", {
+                    type: "button",
+                    class: "btn btn-primario",
+                    text: `Siguiente cliente de ${estado.zona.nombre}`,
+                    onclick: () => irA("clientes", { cliente: null }),
+                }),
+                el("button", {
+                    type: "button",
+                    class: "btn btn-secundario",
+                    text: "Cambiar de zona",
+                    onclick: () => irA("zonas", { zona: null, cliente: null }),
+                }),
+            ])
+        );
+    }
+
+    // =====================================================================
+    // === Modo Cobro ===
+    // =====================================================================
+
+    // El cobro del cliente abierto: lo que devolvió /cobro/detalle, cómo pagó
+    // y el monto tecleado. Se conserva al ir y volver entre el detalle y la
+    // confirmación; se borra al registrar el cobro o al cambiar de cliente.
+    let cobro = null;
+    const TIPOS_COBRO = { todo: "Pagó todo", parte: "Pagó una parte", nada: "No pagó hoy" };
+
+    function cobroActual() {
+        const id = estado.cliente.id;
+        if (!cobro || cobro.clienteId !== id) {
+            cobro = {
+                clienteId: id,
+                detalle: null, // respuesta de /cobro/detalle
+                tipo: null, // "todo" | "parte" | "nada"
+                montoTexto: "", // lo tecleado en "Pagó una parte"
+                token: null,
+                aviso: null, // mensaje arriba del detalle
+                error: null, // mensaje en la confirmación
+                mostrarProblema: false, // se intentó registrar un monto inválido
+            };
+        }
+        return cobro;
+    }
+
+    function hayCobroSinConfirmar() {
+        return Boolean(cobro && cobro.tipo === "parte" && cobro.montoTexto.trim());
+    }
+
+    function redondearCentavos(n) {
+        return Math.round(n * 100) / 100;
+    }
+
+    function fechaCorta(iso) {
+        // "2026-09-20" -> "20/09/2026"
+        const [anio, mes, dia] = (iso || "").split("-");
+        return dia ? `${dia}/${mes}/${anio}` : "";
+    }
+
+    function precioTexto(renglon) {
+        const sufijo = renglon.es_peso_variable ? "/kg" : renglon.unidad === "c/u" ? " c/u" : `/${renglon.unidad}`;
+        return dinero.format(renglon.precio) + sufijo;
+    }
+
+    function revisarMonto(texto, total) {
+        // {monto} si se puede registrar; {problema} si no. Punto o coma decimal,
+        // máximo 2 decimales, mayor a 0 y sin pasar del total.
+        const limpio = (texto || "").trim();
+        if (!limpio) {
+            return { problema: "Escribe cuánto pagó.", vacio: true };
+        }
+        if (!/^\d+([.,]\d{1,2})?$/.test(limpio)) {
+            return { problema: "Escribe el importe con máximo 2 decimales, por ejemplo 150.50." };
+        }
+        const monto = redondearCentavos(Number(limpio.replace(",", ".")));
+        if (monto <= 0) {
+            return { problema: "El importe debe ser mayor a $0." };
+        }
+        if (monto > total) {
+            return {
+                problema: `No puede ser más que el total a cobrar (${dinero.format(total)}). Si pagó todo, regresa y toca «Pagó todo».`,
+            };
+        }
+        return { monto };
+    }
+
+    function montoDelCobro(c) {
+        // Efectivo que se registrará (o null si el monto de "una parte" no es válido).
+        const total = c.detalle.total_a_cobrar;
+        if (c.tipo === "todo") {
+            return total;
+        }
+        if (c.tipo === "nada") {
+            return 0;
+        }
+        const revision = revisarMonto(c.montoTexto, total);
+        return revision.problema ? null : revision.monto;
+    }
+
+    // === Pantalla: Lo que hay que cobrarle al cliente ===
+
+    async function dibujarCobro() {
+        const cliente = estado.cliente;
+        const c = cobroActual();
+        ponerTitulo(cliente.nombre, estado.zona && estado.zona.nombre);
+        const vista = nuevaVista();
+        mostrar(aviso("Cargando lo que debe…"));
+        let detalle;
+        try {
+            // Siempre se vuelve a pedir: refleja lo que otros hayan facturado o cobrado.
+            detalle = await api("/captura/api/cobro/detalle", { cliente_id: cliente.id, zona_id: estado.zona.id });
+        } catch (error) {
+            if (vigente(vista)) {
+                mostrarError(error, dibujarCobro);
+            }
+            return;
+        }
+        if (!vigente(vista)) {
+            return;
+        }
+        c.detalle = detalle;
+        dibujarDetalleCobro();
+    }
+
+    function lineaCobro(nombre, detalle, importe, clase) {
+        return el(
+            "div",
+            { class: `resumen-linea ${clase || ""}` },
+            el("span", { class: "resumen-nombre" }, nombre, detalle ? el("span", { class: "resumen-detalle", text: detalle }) : null),
+            el("span", { class: "resumen-importe", text: importe })
+        );
+    }
+
+    function dibujarDetalleCobro() {
+        const c = cobroActual();
+        const d = c.detalle;
+        const entregado = d.entregado.map((r) =>
+            lineaCobro(
+                r.nombre,
+                (r.es_peso_variable ? `${r.peso.toFixed(3)} kg` : `${r.cantidad} ${r.unidad}`) + ` · ${precioTexto(r)}`,
+                dinero.format(r.importe),
+                "cobro-entregado"
+            )
+        );
+        const anteriores = d.saldo_anterior.map((f) =>
+            lineaCobro(f.folio, `Del ${fechaCorta(f.fecha)}`, dinero.format(f.saldo), "cobro-anterior")
+        );
+        const aFavor = d.creditos.map((f) =>
+            lineaCobro(f.folio, `Del ${fechaCorta(f.fecha)}`, `−${dinero.format(f.saldo)}`, "cobro-credito")
+        );
+        const bloqueado = d.borradores.length > 0;
+        // El servidor pone primero el aviso de la factura en borrador (el que bloquea).
+        const avisos = d.avisos.map((texto, i) =>
+            el("p", { class: bloqueado && i === 0 ? "aviso-cobro bloquea" : "aviso-cobro informativo", role: "alert", text: texto })
+        );
+        let acciones;
+        if (d.puede_cobrar) {
+            acciones = lista([
+                el("button", { type: "button", class: "btn btn-primario btn-pago-todo", text: TIPOS_COBRO.todo, onclick: () => elegirPago("todo") }),
+                el("button", { type: "button", class: "btn btn-secundario", text: TIPOS_COBRO.parte, onclick: () => elegirPago("parte") }),
+                el("button", { type: "button", class: "btn btn-secundario", text: TIPOS_COBRO.nada, onclick: () => elegirPago("nada") }),
+            ]);
+        } else if (!bloqueado) {
+            acciones = aviso("No hay nada que cobrarle.");
+        }
+        mostrar(
+            c.aviso ? el("p", { class: "aviso-cobro", role: "alert", text: c.aviso }) : null,
+            ...avisos,
+            entregado.length ? el("p", { class: "seccion-titulo", text: "Entregado sin facturar" }) : null,
+            entregado.length ? lista(entregado) : null,
+            anteriores.length ? el("p", { class: "seccion-titulo", text: "Saldo anterior" }) : null,
+            anteriores.length ? lista(anteriores) : null,
+            aFavor.length ? el("p", { class: "seccion-titulo", text: "Saldo a favor (se descuenta)" }) : null,
+            aFavor.length ? lista(aFavor) : null,
+            el(
+                "div",
+                { class: "total-entrega total-cobro" },
+                el("span", { class: "total-etiqueta", text: "Total a cobrar" }),
+                el("span", { class: "total-monto", text: dinero.format(d.total_a_cobrar) })
+            ),
+            d.saldo_a_favor > 0 ? el("p", { class: "nota", text: `Le quedan ${dinero.format(d.saldo_a_favor)} a favor.` }) : null,
+            acciones ? el("div", { class: "acciones-cobro" }, acciones) : null
+        );
+    }
+
+    function elegirPago(tipo) {
+        const c = cobroActual();
+        c.tipo = tipo;
+        c.error = null;
+        c.aviso = null;
+        c.mostrarProblema = false;
+        irA("cobro-confirmar", {});
+    }
+
+    // === Pantalla: Confirmación del cobro ===
+
+    function dibujarConfirmarCobro() {
+        ponerTitulo(estado.cliente.nombre, estado.zona && estado.zona.nombre);
+        nuevaVista();
+        const c = cobroActual();
+        if (!c.detalle || !c.tipo) {
+            mostrar(
+                aviso("Toca Regresar para ver lo que debe."),
+                el("button", { type: "button", class: "btn btn-primario", text: "‹ Regresar", onclick: alTocarRegresar })
+            );
+            return;
+        }
+        const total = c.detalle.total_a_cobrar;
+        const nodos = [el("p", { class: "pregunta", text: TIPOS_COBRO[c.tipo] })];
+        let campo = null;
+        if (c.tipo === "parte") {
+            campo = el("input", {
+                class: "peso-campo monto-campo",
+                type: "text",
+                inputmode: "decimal",
+                autocomplete: "off",
+                "aria-label": "Efectivo recibido",
+                placeholder: "0.00",
+                value: c.montoTexto,
+                oninput: (evento) => {
+                    c.montoTexto = evento.target.value;
+                    c.mostrarProblema = false;
+                    actualizarEcoMonto();
+                },
+            });
+            nodos.push(
+                el("label", { class: "seccion-titulo", text: "¿Cuánto pagó?" }),
+                el("div", { class: "peso" }, el("span", { class: "peso-unidad", text: "$" }), campo),
+                el("p", { class: "peso-eco monto-eco" }),
+                el("p", { class: "renglon-mensaje monto-mensaje", hidden: "hidden" })
+            );
+        }
+        nodos.push(
+            lista([
+                lineaCobro("Total a cobrar", null, dinero.format(total), "cobro-total"),
+                lineaCobro("Efectivo recibido", null, "", "cobro-recibido"),
+                lineaCobro("Queda debiendo", null, "", "cobro-debe"),
+            ]),
+            c.error ? el("p", { class: "error-envio", role: "alert", text: c.error }) : null,
+            el("button", {
+                type: "button",
+                class: "btn btn-primario btn-registrar-cobro",
+                text: estado.enviando ? "Registrando…" : "✓ Registrar cobro",
+                disabled: estado.enviando ? "disabled" : null,
+                onclick: registrarCobro,
+            }),
+            el("p", { class: "nota", text: "Para cambiar algo, toca Regresar." })
+        );
+        mostrar(...nodos);
+        actualizarEcoMonto();
+    }
+
+    function actualizarEcoMonto() {
+        // Eco en vivo de lo que se registrará.
+        const c = cobroActual();
+        const total = c.detalle.total_a_cobrar;
+        const monto = montoDelCobro(c);
+        const recibido = ui.contenido.querySelector(".cobro-recibido .resumen-importe");
+        const debe = ui.contenido.querySelector(".cobro-debe .resumen-importe");
+        recibido.textContent = monto === null ? "—" : dinero.format(monto);
+        debe.textContent = monto === null ? "—" : dinero.format(redondearCentavos(total - monto));
+        const eco = ui.contenido.querySelector(".monto-eco");
+        const mensaje = ui.contenido.querySelector(".monto-mensaje");
+        if (!eco) {
+            return;
+        }
+        const revision = revisarMonto(c.montoTexto, total);
+        eco.textContent = revision.problema
+            ? revision.vacio
+                ? "Escribe cuánto pagó"
+                : "Importe no válido"
+            : `Recibe ${dinero.format(revision.monto)} · Queda debiendo ${dinero.format(redondearCentavos(total - revision.monto))}`;
+        mensaje.textContent = revision.problema || "";
+        mensaje.hidden = !(c.mostrarProblema && revision.problema);
+    }
+
+    async function registrarCobro() {
+        const c = cobroActual();
+        if (!c.detalle || !c.tipo || estado.enviando || confirmando) {
+            return;
+        }
+        const monto = montoDelCobro(c);
+        if (monto === null) {
+            c.mostrarProblema = true;
+            actualizarEcoMonto();
+            const campo = ui.contenido.querySelector(".monto-campo");
+            if (campo) {
+                campo.focus();
+            }
+            return;
+        }
+        if (c.tipo === "nada") {
+            const seguro = await confirmar(
+                `La deuda de ${dinero.format(c.detalle.total_a_cobrar)} quedará pendiente.`,
+                "Sí, no pagó hoy",
+                "No, regresar"
+            );
+            if (!seguro || estado.enviando) {
+                return;
+            }
+        }
+        estado.enviando = true; // antes del await: bloquea el doble toque
+        c.error = null;
+        c.token = c.token || nuevoToken();
+        dibujarConfirmarCobro();
+        const cliente = estado.cliente;
+        let resultado;
+        try {
+            resultado = await api("/captura/api/cobro/confirmar", {
+                cliente_id: cliente.id,
+                zona_id: estado.zona.id,
+                tipo: c.tipo,
+                visto: c.detalle.visto,
+                token: c.token,
+                ...(c.tipo === "parte" ? { monto } : {}),
+            });
+        } catch (error) {
+            estado.enviando = false;
+            c.error = error.sinRespuesta
+                ? "No se pudo confirmar si el cobro llegó. Toca «Registrar cobro» otra vez: si ya había llegado, no se duplica."
+                : `No se registró el cobro: ${error.message}`;
+            dibujarConfirmarCobro();
+            return;
+        }
+        estado.enviando = false;
+        if (resultado.cambiaron) {
+            // Otra persona facturó o cobró: se muestra lo nuevo, sin registrar nada.
+            c.detalle = resultado.cobro;
+            c.token = null;
+            c.tipo = null;
+            c.aviso =
+                "Otra persona facturó o cobró a este cliente mientras tanto. " +
+                "Se volvió a cargar lo que debe: revisa el total y cobra otra vez.";
+            history.back();
+            return;
+        }
+        cobro = null;
+        estado.cobrado = resultado;
+        estado.pantalla = "cobrado";
+        // Reemplaza la confirmación en el historial: "atrás" ya no regresa a ella.
+        history.replaceState(fotoHistorial(), "");
+        dibujar();
+    }
+
+    // === Pantalla: Cobro registrado ===
+
+    function dibujarCobrado() {
+        nuevaVista();
+        const cobrado = estado.cobrado;
+        ponerTitulo("Cobro registrado", estado.zona && estado.zona.nombre);
+        if (!cobrado || !estado.zona) {
+            mostrar(
+                aviso("Cobro registrado."),
+                el("button", {
+                    type: "button",
+                    class: "btn btn-primario",
+                    text: "Ir a zonas",
+                    onclick: () => irA("zonas", { zona: null, cliente: null }),
+                })
+            );
+            return;
+        }
+        mostrar(
+            el(
+                "div",
+                { class: "enviado", role: "status" },
+                el("p", { class: "enviado-marca", "aria-hidden": "true", text: "✓" }),
+                el("p", { class: "cobrar", text: `Cobrado: ${dinero.format(cobrado.monto_recibido)}` }),
+                cobrado.saldo_pendiente > 0
+                    ? el("p", { class: "queda-debiendo", text: `Queda debiendo: ${dinero.format(cobrado.saldo_pendiente)}` })
+                    : null,
+                el("p", { class: "enviado-detalle", text: `${cobrado.cliente} · ${TIPOS_COBRO[cobrado.tipo]}` }),
+                cobrado.facturas.length
+                    ? el("ul", { class: "folios" }, ...cobrado.facturas.map((f) => el("li", { text: `Factura ${f.folio}` })))
+                    : null
             ),
             lista([
                 el("button", {

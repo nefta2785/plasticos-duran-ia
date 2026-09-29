@@ -61,7 +61,7 @@ try {
             "--no-default-browser-check",
             "--allow-file-access-from-files",
             "--window-size=390,844", // tamaño de celular
-            "--virtual-time-budget=30000",
+            "--virtual-time-budget=60000",
             "--dump-dom",
             url(pagina),
         ],

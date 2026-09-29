@@ -17,13 +17,10 @@ async function pasoInicio() {
     );
     check("Inicio: sin barra de pedido ni pestañas", [q("#barra-pedido").hidden, q("#categorias").hidden], [true, true]);
     check(
-        "Inicio: Pedido y Entrega habilitados; Cobro deshabilitado (aún sin pantallas)",
+        "Inicio: los tres modos habilitados",
         [modo("Pedido").disabled, modo("Entrega").disabled, modo("Cobro").disabled],
-        [false, false, true]
+        [false, false, false]
     );
-    modo("Cobro").click();
-    await espera(80);
-    check("Cobro deshabilitado: tocarlo no hace nada", [txt("#titulo"), llamadas.length], ["Captura", 0]);
     check("Inicio: no llama al servidor", llamadas.length, 0);
 
     modo("Pedido").click();
@@ -600,17 +597,230 @@ async function pasoEntregaAlgoMasYNada() {
     check("Nada: éxito con Cobrar $0.00", txt(".cobrar"), "Cobrar: $0.00");
 }
 
+// === Modo Cobro ===
+
+const hayBoton = (texto) => Boolean(boton(texto));
+const importeDe = (clase) => txt(`.${clase} .resumen-importe`);
+const mensajeMonto = () => {
+    const nodo = q(".monto-mensaje");
+    return nodo && !nodo.hidden ? nodo.textContent : null;
+};
+
+async function pasoCobroClientes() {
+    await irAInicio();
+    modo("Cobro").click();
+    await espera(80);
+    check("Cobro: Zonas con subtítulo Cobro", [txt("#titulo"), txt("#subtitulo")], ["Zonas", "Cobro"]);
+    boton("Guadalupana").click();
+    await espera(80);
+    check("Cobro: zona sin nada por cobrar", txt(".aviso"), "Nadie de esta zona tiene algo por cobrar");
+    await regresar();
+    boton("Bosques").click();
+    await espera(80);
+    check(
+        "Cobro: solo clientes con algo por cobrar (ruta de Cobro)",
+        [qa(".lista .btn").map((b) => b.textContent), llamadasA("cobro/clientes")],
+        [["Doña Carmen", "Don Beto", "Cliente con historial"], 2]
+    );
+}
+
+async function pasoCobroAvisos() {
+    boton("Don Beto").click();
+    await espera(120);
+    check(
+        "Borrador: aviso que bloquea, con el texto acordado",
+        txt(".aviso-cobro.bloquea"),
+        "Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."
+    );
+    check(
+        "Borrador: sin botones de pago",
+        [hayBoton("Pagó todo"), hayBoton("Pagó una parte"), hayBoton("No pagó hoy"), q(".acciones-cobro")],
+        [false, false, false, null]
+    );
+    check("Borrador: el total se ve", txt(".total-cobro .total-monto"), "$325.00");
+    await regresar();
+    boton("Cliente con historial").click();
+    await espera(120);
+    check(
+        "Devolución sin nota de crédito: aviso informativo, con botones de pago",
+        [txt(".aviso-cobro.informativo"), q(".aviso-cobro.bloquea"), hayBoton("Pagó todo")],
+        ["Hay devoluciones sin nota de crédito (S00040). No entran en este cobro: haz la nota de crédito en Odoo.", null, true]
+    );
+    check(
+        "Solo saldo anterior: sin sección de entregado",
+        [qa(".cobro-entregado").length, importesCobro(".cobro-anterior")],
+        [0, [["INV/2026/00015", "Del 25/09/2026", "$150.00"]]]
+    );
+    await regresar();
+}
+
+async function pasoCobroDetalle() {
+    boton("Doña Carmen").click();
+    await espera(120);
+    check("Detalle: título cliente y zona", [txt("#titulo"), txt("#subtitulo")], ["Doña Carmen", "Bosques"]);
+    check(
+        "Detalle: entregado sin facturar con pesos, precios e importes",
+        importesCobro(".cobro-entregado"),
+        [["Estrella 25x35", "1.250 kg · $85.00/kg", "$106.25"], ["Blanca #2", "3 kg · $70.00/kg", "$210.00"]]
+    );
+    check("Detalle: saldo anterior con fecha y saldo", importesCobro(".cobro-anterior"), [["INV/2026/00012", "Del 20/09/2026", "$1,000.00"]]);
+    check("Detalle: saldo a favor restado", importesCobro(".cobro-credito"), [["RINV/2026/00003", "Del 21/09/2026", "−$16.25"]]);
+    check("Detalle: TOTAL A COBRAR grande, con formato $1,234.50", [txt(".total-cobro .total-etiqueta"), txt(".total-cobro .total-monto")], ["Total a cobrar", "$1,300.00"]);
+    const botones = qa(".acciones-cobro .btn");
+    check(
+        "Detalle: «Pagó todo» principal; las otras dos, secundarias",
+        botones.map((b) => [b.textContent, b.classList.contains("btn-primario"), b.classList.contains("btn-secundario")]),
+        [["Pagó todo", true, false], ["Pagó una parte", false, true], ["No pagó hoy", false, true]]
+    );
+    check("Detalle: recargar no pregunta", pideConfirmarAlSalir(), false);
+}
+
+async function pasoCobroParte() {
+    boton("Pagó una parte").click();
+    await espera(80);
+    check("Una parte: título y campo con teclado decimal", [txt(".pregunta"), q(".monto-campo").getAttribute("inputmode")], ["Pagó una parte", "decimal"]);
+    check("Una parte: sin monto, el eco lo pide", txt(".monto-eco"), "Escribe cuánto pagó");
+    check("Una parte vacía: recargar no pregunta", pideConfirmarAlSalir(), false);
+    await escribirMonto("100,5");
+    check(
+        "Eco en vivo (con coma decimal)",
+        [txt(".monto-eco"), importeDe("cobro-total"), importeDe("cobro-recibido"), importeDe("cobro-debe")],
+        ["Recibe $100.50 · Queda debiendo $1,199.50", "$1,300.00", "$100.50", "$1,199.50"]
+    );
+    check("Con un monto escrito: recargar pregunta antes", pideConfirmarAlSalir(), true);
+    for (const [texto, mensaje] of [
+        ["0", "El importe debe ser mayor a $0."],
+        ["", "Escribe cuánto pagó."],
+        ["1300.01", "No puede ser más que el total a cobrar ($1,300.00). Si pagó todo, regresa y toca «Pagó todo»."],
+        ["12.345", "Escribe el importe con máximo 2 decimales, por ejemplo 150.50."],
+    ]) {
+        await escribirMonto(texto);
+        check(`Monto «${texto}»: sin mensaje hasta intentar registrar`, mensajeMonto(), null);
+        boton("✓ Registrar cobro").click();
+        await espera(30);
+        check(`Monto «${texto}»: no continúa, mensaje claro`, [mensajeMonto(), cobrosEnviados.length, txt(".pregunta")], [mensaje, 0, "Pagó una parte"]);
+    }
+    check("Monto de más: el eco no lo acepta", txt(".monto-eco"), "Importe no válido");
+    await escribirMonto("1,300");
+    check("La coma es decimal (no de miles): «1,300» no es válido", txt(".monto-eco"), "Importe no válido");
+    await escribirMonto("1300");
+    check("Justo el total: queda debiendo $0.00", txt(".monto-eco"), "Recibe $1,300.00 · Queda debiendo $0.00");
+
+    // Otra persona facturó o cobró mientras tanto.
+    await escribirMonto("250");
+    modoCobro = "cambiaron";
+    boton("✓ Registrar cobro").click();
+    await espera(250);
+    const enviado = cobrosEnviados[0];
+    check(
+        "Datos enviados: tipo, monto, lo visto y token",
+        [enviado.tipo, enviado.monto, enviado.visto.documentos, /^[0-9a-f]{32}$/.test(enviado.token)],
+        ["parte", 250, [[501, 1000], [502, 16.25]], true]
+    );
+    check(
+        "Cambiaron: mensaje claro y detalle recargado con los datos nuevos",
+        [txt("#titulo"), txt(".aviso-cobro"), txt(".total-cobro .total-monto"), !!q(".acciones-cobro")],
+        [
+            "Doña Carmen",
+            "Otra persona facturó o cobró a este cliente mientras tanto. Se volvió a cargar lo que debe: revisa el total y cobra otra vez.",
+            "$1,200.00",
+            true,
+        ]
+    );
+    check("Cambiaron: saldo anterior nuevo", importesCobro(".cobro-anterior")[0][2], "$900.00");
+}
+
+async function pasoCobroEnviar() {
+    const tokenCambiaron = cobrosEnviados[0].token;
+    boton("Pagó una parte").click();
+    await espera(80);
+    check("Se conserva el monto, con el total nuevo", [q(".monto-campo").value, txt(".monto-eco")], ["250", "Recibe $250.00 · Queda debiendo $950.00"]);
+    const antes = cobrosEnviados.length;
+    modoCobro = "sin-red";
+    boton("✓ Registrar cobro").click();
+    q(".btn-registrar-cobro").click(); // doble toque
+    await espera(10);
+    check("Registrando: botón bloqueado", [q(".btn-registrar-cobro").disabled, txt(".btn-registrar-cobro")], [true, "Registrando…"]);
+    history.back();
+    await espera(30);
+    check("Registrando: atrás no sale de la pantalla", txt(".pregunta"), "Pagó una parte");
+    await espera(200);
+    check("Doble toque: un solo envío", cobrosEnviados.length, antes + 1);
+    const primero = cobrosEnviados[cobrosEnviados.length - 1];
+    check("Token nuevo después de «cambiaron»", primero.token !== tokenCambiaron, true);
+    check(
+        "Sin señal: mensaje y reintento seguro",
+        txt(".error-envio"),
+        "No se pudo confirmar si el cobro llegó. Toca «Registrar cobro» otra vez: si ya había llegado, no se duplica."
+    );
+    boton("✓ Registrar cobro").click();
+    await espera(250);
+    check("Reintento: mismo token", cobrosEnviados[cobrosEnviados.length - 1].token, primero.token);
+    check(
+        "Éxito: Cobrado en grande, queda debiendo, cliente y factura",
+        [txt("#titulo"), txt(".cobrar"), txt(".queda-debiendo"), txt(".enviado-detalle"), qa(".folios li").map((l) => l.textContent)],
+        ["Cobro registrado", "Cobrado: $250.00", "Queda debiendo: $950.00", "Doña Carmen · Pagó una parte", ["Factura INV/2026/00020"]]
+    );
+    check("Éxito: botones", qa(".lista .btn").map((b) => b.textContent), ["Siguiente cliente de Bosques", "Cambiar de zona"]);
+    check("Cobro registrado: recargar ya no pregunta", pideConfirmarAlSalir(), false);
+    boton("Siguiente cliente de Bosques").click();
+    await espera(120);
+    // Pedidos: Guadalupana, Bosques, dos «Regresar» y este.
+    check("Siguiente cliente: clientes por cobrar de la zona", [txt("#titulo"), llamadasA("cobro/clientes")], ["Bosques", 5]);
+}
+
+async function pasoCobroTodoYNada() {
+    boton("Cliente con historial").click();
+    await espera(120);
+    boton("Pagó todo").click();
+    await espera(80);
+    check(
+        "Pagó todo: resumen sin campo de monto",
+        [txt(".pregunta"), q(".monto-campo"), importeDe("cobro-recibido"), importeDe("cobro-debe")],
+        ["Pagó todo", null, "$150.00", "$0.00"]
+    );
+    boton("✓ Registrar cobro").click();
+    await espera(200);
+    const todo = cobrosEnviados[cobrosEnviados.length - 1];
+    check("Pagó todo: se envía sin monto", [todo.tipo, "monto" in todo], ["todo", false]);
+    check("Pagó todo: éxito sin «queda debiendo»", [txt(".cobrar"), q(".queda-debiendo")], ["Cobrado: $150.00", null]);
+
+    boton("Siguiente cliente de Bosques").click();
+    await espera(120);
+    boton("Doña Carmen").click();
+    await espera(120);
+    boton("No pagó hoy").click();
+    await espera(80);
+    check("No pagó hoy: resumen", [importeDe("cobro-recibido"), importeDe("cobro-debe")], ["$0.00", "$1,200.00"]);
+    const antes = cobrosEnviados.length;
+    boton("✓ Registrar cobro").click();
+    await espera(30);
+    check("No pagó hoy: confirmación extra", [q("#modal").hidden, txt("#modal-texto")], [false, "La deuda de $1,200.00 quedará pendiente."]);
+    await responderModal(false);
+    check("Responder No: no se envía", [cobrosEnviados.length, txt(".pregunta")], [antes, "No pagó hoy"]);
+    boton("✓ Registrar cobro").click();
+    await espera(30);
+    await responderModal(true);
+    await espera(200);
+    check("Responder Sí: se envía «nada»", [cobrosEnviados.length, cobrosEnviados[cobrosEnviados.length - 1].tipo], [antes + 1, "nada"]);
+    check("No pagó hoy: éxito", [txt(".cobrar"), txt(".queda-debiendo")], ["Cobrado: $0.00", "Queda debiendo: $1,200.00"]);
+    boton("Cambiar de zona").click();
+    await espera(120);
+    check("Cambiar de zona: Zonas de Cobro", [txt("#titulo"), txt("#subtitulo")], ["Zonas", "Cobro"]);
+}
+
 const PASOS = [
     pasoInicio, pasoZonas, pasoClientes, pasoProductos, pasoConfirmarAntesDeVaciar, pasoLoDeSiempre,
     pasoResumen, pasoEnviar, pasoEntregaClientes, pasoEntregaLista, pasoEntregaResumen,
     pasoEntregaConfirmar, pasoEntregaAlgoMasYNada,
+    pasoCobroClientes, pasoCobroAvisos, pasoCobroDetalle, pasoCobroParte, pasoCobroEnviar, pasoCobroTodoYNada,
 ];
 
 window.addEventListener("load", async () => {
     let pasoActual = "arranque";
     // Si un paso se queda esperando (p. ej. un modal sin responder), se
     // publican los resultados de todos modos, diciendo en qué paso se atoró.
-    const limite = new Promise((resolver) => setTimeout(() => resolver("tiempo"), 25000));
+    const limite = new Promise((resolver) => setTimeout(() => resolver("tiempo"), 45000));
     const recorrido = (async () => {
         await espera(80);
         for (const paso of PASOS) {

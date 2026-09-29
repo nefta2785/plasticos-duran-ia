@@ -208,6 +208,104 @@ const datosEntrega = {
     "/captura/api/entrega/pendiente": (p) => pendientes[p.cliente_id](),
 };
 
+// === Modo Cobro ===
+
+let otraPersonaCobro = false; // tras "cambiaron": alguien le abonó $100 a la factura de Doña Carmen
+const detallesCobro = {
+    9: () => ({
+        cliente: { id: 9, nombre: "Doña Carmen" },
+        entregado: [
+            { linea_id: 301, orden: "S00050", ...ESTRELLA, precio: 85, cantidad: 1, peso: 1.25, importe: 106.25 },
+            { linea_id: 302, orden: "S00050", ...BLANCA, precio: 70, cantidad: 3, peso: null, importe: 210 },
+        ],
+        total_entregado: 316.25,
+        saldo_anterior: [
+            { move_id: 501, folio: "INV/2026/00012", fecha: "2026-09-20", total: 1000, saldo: otraPersonaCobro ? 900 : 1000 },
+        ],
+        total_saldo_anterior: otraPersonaCobro ? 900 : 1000,
+        creditos: [{ move_id: 502, folio: "RINV/2026/00003", fecha: "2026-09-21", total: 16.25, saldo: 16.25 }],
+        total_creditos: 16.25,
+        total_a_cobrar: otraPersonaCobro ? 1200 : 1300,
+        saldo_a_favor: 0,
+        borradores: [],
+        devoluciones: [],
+        avisos: [],
+        puede_cobrar: true,
+        visto: { lineas: [[301, 1], [302, 3]], documentos: [[501, otraPersonaCobro ? 900 : 1000], [502, 16.25]], borradores: [] },
+    }),
+    21: () => ({
+        cliente: { id: 21, nombre: "Don Beto" },
+        entregado: [{ linea_id: 311, orden: "S00060", ...CAJA, precio: 325, cantidad: 1, peso: null, importe: 325 }],
+        total_entregado: 325,
+        saldo_anterior: [],
+        total_saldo_anterior: 0,
+        creditos: [],
+        total_creditos: 0,
+        total_a_cobrar: 325,
+        saldo_a_favor: 0,
+        borradores: [{ move_id: 601, folio: "Borrador", origen: "S00058", total: 90 }],
+        devoluciones: [],
+        avisos: ["Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."],
+        puede_cobrar: false,
+        visto: { lineas: [[311, 1]], documentos: [], borradores: [601] },
+    }),
+    12: () => ({
+        cliente: { id: 12, nombre: "Cliente con historial" },
+        entregado: [],
+        total_entregado: 0,
+        saldo_anterior: [{ move_id: 511, folio: "INV/2026/00015", fecha: "2026-09-25", total: 150, saldo: 150 }],
+        total_saldo_anterior: 150,
+        creditos: [],
+        total_creditos: 0,
+        total_a_cobrar: 150,
+        saldo_a_favor: 0,
+        borradores: [],
+        devoluciones: [{ linea_id: 321, orden: "S00040", nombre: "Blanca #2", cantidad: 1 }],
+        avisos: ["Hay devoluciones sin nota de crédito (S00040). No entran en este cobro: haz la nota de crédito en Odoo."],
+        puede_cobrar: true,
+        visto: { lineas: [], documentos: [[511, 150]], borradores: [] },
+    }),
+};
+
+// /captura/api/cobro/confirmar: "ok", o UNA vez: "sin-red", "cambiaron".
+let modoCobro = "ok";
+const cobrosEnviados = []; // parámetros de cada confirmación de cobro
+const cobrosPorToken = new Map();
+function confirmarCobroSimulado(p) {
+    cobrosEnviados.push(p);
+    const modo = modoCobro;
+    modoCobro = "ok";
+    if (cobrosPorToken.has(p.token)) {
+        return { result: { ...cobrosPorToken.get(p.token), ya_existia: true } };
+    }
+    if (modo === "cambiaron") {
+        otraPersonaCobro = true;
+        return { result: { cambiaron: true, cobro: detallesCobro[p.cliente_id]() } };
+    }
+    const detalle = detallesCobro[p.cliente_id]();
+    const total = detalle.total_a_cobrar;
+    const recibido = p.tipo === "todo" ? total : p.tipo === "parte" ? p.monto : 0;
+    const resultado = {
+        cambiaron: false, id: 1, cliente: detalle.cliente.nombre, tipo: p.tipo, total_a_cobrar: total,
+        monto_recibido: recibido, saldo_pendiente: redondear(total - recibido),
+        facturas: detalle.entregado.length ? [{ folio: "INV/2026/00020", total: detalle.total_entregado }] : [],
+        ya_existia: false,
+    };
+    cobrosPorToken.set(p.token, resultado);
+    if (modo === "sin-red") {
+        throw new TypeError("Failed to fetch"); // el cobro SÍ quedó, pero la respuesta no llegó
+    }
+    return { result: resultado };
+}
+
+const datosCobro = {
+    "/captura/api/cobro/clientes": (p) =>
+        p.zona_id === 1
+            ? [{ id: 9, nombre: "Doña Carmen" }, { id: 21, nombre: "Don Beto" }, { id: 12, nombre: "Cliente con historial" }]
+            : [],
+    "/captura/api/cobro/detalle": (p) => detallesCobro[p.cliente_id](),
+};
+
 window.fetch = async (ruta, opciones) => {
     const params = JSON.parse(opciones.body).params;
     llamadas.push(ruta);
@@ -221,6 +319,11 @@ window.fetch = async (ruta, opciones) => {
     } else if (ruta === "/captura/api/entrega/vista_previa") {
         await espera(20);
         cuerpo = { result: vistaPreviaSimulada(params) };
+    } else if (ruta === "/captura/api/cobro/confirmar") {
+        await espera(60);
+        cuerpo = confirmarCobroSimulado(params);
+    } else if (datosCobro[ruta]) {
+        cuerpo = { result: datosCobro[ruta](params) };
     } else if (datosEntrega[ruta]) {
         cuerpo = { result: datosEntrega[ruta](params) };
     } else {
@@ -255,6 +358,20 @@ const mensajeDe = (clave) => {
 };
 const botonNoLlevo = (clave) => renglon(clave).querySelector(".btn-no-llevo");
 const cantidadEntrega = (clave) => txt(`[data-renglon="${clave}"] .cantidad-entrega`);
+
+async function escribirMonto(texto) {
+    const campo = q(".monto-campo");
+    campo.value = texto;
+    campo.dispatchEvent(new Event("input", { bubbles: true }));
+    await espera(5);
+}
+
+const importesCobro = (selector) =>
+    qa(`${selector}`).map((l) => [
+        l.querySelector(".resumen-nombre").firstChild.textContent,
+        l.querySelector(".resumen-detalle") ? l.querySelector(".resumen-detalle").textContent : null,
+        l.querySelector(".resumen-importe").textContent,
+    ]);
 
 async function escribirPeso(moveId, texto) {
     const campo = campoPeso(moveId);
