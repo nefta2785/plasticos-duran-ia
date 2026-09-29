@@ -8,17 +8,19 @@
         <field name="name">duran.captura.cobro.list</field>
         <field name="model">duran.captura.cobro</field>
         <field name="arch" type="xml">
+            <!-- Arqueo: en cada grupo (día, quién cobró) se suman el efectivo
+                 recibido y lo que quedó pendiente. -->
             <list string="Cobros en tianguis" create="false" edit="false" delete="false">
                 <field name="fecha"/>
+                <field name="user_id" widget="many2one_avatar_user"/>
                 <field name="partner_id"/>
                 <field name="zona_id"/>
-                <field name="user_id" widget="many2one_avatar_user" optional="show"/>
                 <field name="tipo"/>
                 <field name="invoice_ids" widget="many2many_tags" optional="hide" groups="sales_team.group_sale_manager"/>
                 <field name="currency_id" column_invisible="True"/>
-                <field name="total_a_cobrar" sum="Total a cobrar" optional="show"/>
+                <field name="total_a_cobrar" sum="Total a cobrar"/>
                 <field name="monto_recibido" sum="Efectivo recibido"/>
-                <field name="saldo_pendiente" sum="Queda pendiente" optional="show"/>
+                <field name="saldo_pendiente" sum="Queda pendiente"/>
             </list>
         </field>
     </record>
@@ -88,6 +90,8 @@
                 <filter string="Pagó una parte" name="pago_parte" domain="[('tipo', '=', 'parte')]"/>
                 <filter string="No pagó hoy" name="pago_nada" domain="[('tipo', '=', 'nada')]"/>
                 <separator/>
+                <!-- 'today' es el día de hoy en la zona horaria de quien consulta. -->
+                <filter string="Hoy" name="hoy" domain="[('fecha', '&gt;=', 'today'), ('fecha', '&lt;', 'today +1d')]"/>
                 <filter string="Fecha" name="filtro_fecha" date="fecha"/>
                 <group>
                     <filter string="Zona" name="agrupar_zona" context="{'group_by': 'zona_id'}"/>
@@ -102,6 +106,8 @@
         <field name="name">Cobros en tianguis</field>
         <field name="res_model">duran.captura.cobro</field>
         <field name="view_mode">list,form</field>
+        <!-- Arqueo del día: hoy, por día y dentro por quién cobró. -->
+        <field name="context">{'search_default_hoy': 1, 'search_default_agrupar_dia': 1, 'search_default_agrupar_usuario': 2}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Todavía no hay cobros en tianguis</p>
             <p>Aquí aparece cada cobro confirmado desde la pantalla de captura (modo Cobro).</p>
