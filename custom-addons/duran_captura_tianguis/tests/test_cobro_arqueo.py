@@ -1,4 +1,4 @@
-""" Paso 6 (modo Cobro): arqueo del día en el menú "Cobros en tianguis". """
+""" Paso 6 (modo Cobro): arqueo del día en el menú "Resumen de ventas". """
 from datetime import timedelta
 
 from lxml import etree

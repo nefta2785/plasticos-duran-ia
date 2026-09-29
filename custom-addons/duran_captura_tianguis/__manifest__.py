@@ -10,7 +10,7 @@ celular por un usuario del grupo "Captura tianguis".
 
 Cada entrega confirmada desde la pantalla queda en una bitácora (Ventas >
 Órdenes > Entregas en tianguis), y cada cobro en otra (Ventas > Órdenes >
-Cobros en tianguis).
+Resumen de ventas).
 """,
     "author": "Plásticos Durán",
     "license": "LGPL-3",

@@ -10,7 +10,7 @@
         <field name="arch" type="xml">
             <!-- Arqueo: en cada grupo (día, quién cobró) se suman el efectivo
                  recibido y lo que quedó pendiente. -->
-            <list string="Cobros en tianguis" create="false" edit="false" delete="false">
+            <list string="Resumen de ventas" create="false" edit="false" delete="false">
                 <field name="fecha"/>
                 <field name="user_id" widget="many2one_avatar_user"/>
                 <field name="partner_id"/>
@@ -80,7 +80,7 @@
         <field name="name">duran.captura.cobro.search</field>
         <field name="model">duran.captura.cobro</field>
         <field name="arch" type="xml">
-            <search string="Cobros en tianguis">
+            <search string="Resumen de ventas">
                 <field name="partner_id"/>
                 <field name="zona_id"/>
                 <field name="user_id"/>
@@ -103,19 +103,19 @@
     </record>
 
     <record id="captura_cobro_action" model="ir.actions.act_window">
-        <field name="name">Cobros en tianguis</field>
+        <field name="name">Resumen de ventas</field>
         <field name="res_model">duran.captura.cobro</field>
         <field name="view_mode">list,form</field>
         <!-- Arqueo del día: hoy, por día y dentro por quién cobró. -->
         <field name="context">{'search_default_hoy': 1, 'search_default_agrupar_dia': 1, 'search_default_agrupar_usuario': 2}</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">Todavía no hay cobros en tianguis</p>
-            <p>Aquí aparece cada cobro confirmado desde la pantalla de captura (modo Cobro).</p>
+            <p class="o_view_nocontent_smiling_face">Todavía no hay nada en el resumen de ventas</p>
+            <p>Aquí aparece cada cobro confirmado desde la app de captura (modo Cobro): cuánto se cobró, cuánto quedó pendiente y quién cobró.</p>
         </field>
     </record>
 
     <menuitem id="captura_cobro_menu"
-        name="Cobros en tianguis"
+        name="Resumen de ventas"
         parent="sale.sale_order_menu"
         action="captura_cobro_action"
         groups="sales_team.group_sale_manager,group_captura_tianguis"

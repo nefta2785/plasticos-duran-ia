@@ -33,7 +33,7 @@ Si se cambia una factura ya pagada, lo que se cobró deja de cuadrar con lo que 
 
 ## 4. El corte del día (arqueo)
 
-En Odoo: **Ventas › Órdenes › Cobros en tianguis**.
+En Odoo: **Ventas › Órdenes › Resumen de ventas**.
 
 - Se abre con los cobros de **hoy**, agrupados por día y, dentro, por **quién cobró**.
 - En el renglón de cada persona se ven las sumas:
@@ -56,7 +56,7 @@ efectivo. **Esa factura también está saldada**: el cliente ya no la debe.
 los regresa a la pantalla de captura.
 
 **Cobren siempre con la app.** Si un pago se anota directamente en Odoo, ese dinero **no aparece
-en "Cobros en tianguis"** y no sale en el corte del día. La deuda del cliente sí baja, pero el
+en "Resumen de ventas"** y no sale en el corte del día. La deuda del cliente sí baja, pero el
 corte no lo cuenta.
 
 **Debe haber una sola caja de Efectivo en Odoo.** En Facturación › Configuración › Contabilidad ›
@@ -80,7 +80,7 @@ desde Odoo: la app es la que pide el peso de cada rollo y con ese peso se cobra.
   precio del tianguis.
 
 **Un cobro no se puede deshacer desde la app.** Si se registró mal (por ejemplo, otra cantidad),
-hay que corregirlo en Odoo. El cobro equivocado **sigue apareciendo** en "Cobros en tianguis", así
+hay que corregirlo en Odoo. El cobro equivocado **sigue apareciendo** en "Resumen de ventas", así
 que al hacer el corte tómenlo en cuenta.
 
 ## 7. Si se pierde un celular
