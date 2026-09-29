@@ -20,11 +20,18 @@ Las comillas simples son importantes: hacen que esas variables se lean *dentro* 
 | Qué cambió | Qué hacer |
 |---|---|
 | Solo archivos Python (`.py`) de modelos o controladores | Reiniciar Odoo (1a) |
-| Archivos XML (vistas, plantillas, seguridad), `__manifest__.py`, campos nuevos en un modelo | Reiniciar Odoo (1a) **y** actualizar el módulo (1b) |
+| Archivos XML (vistas, plantillas, seguridad), `__manifest__.py`, campos nuevos en un modelo | Actualizar el módulo (1b) **y después** reiniciar Odoo (1a) |
 | Solo archivos de `static/` (JS, CSS) | Nada: basta recargar la página. La plantilla agrega `?v=…` con la fecha del archivo, así que el navegador (y el celular) descargan la versión nueva |
 | Solo archivos de `tests/` | Nada: correr las pruebas (2) ya carga la versión nueva |
 
-Ante la duda, hacer 1a + 1b + 2: no hace daño.
+Ante la duda, hacer 1b + 1a + 2: no hace daño.
+
+**Regla: después de actualizar un módulo, SIEMPRE reiniciar Odoo (1a) y abrir en
+`http://localhost:8071` la pantalla afectada, antes de dar el cambio por terminado.** También
+cuando el módulo se actualizó al correr pruebas con `-u`. Actualizar el módulo guarda las vistas
+nuevas en la base, pero el servicio de 8071 sigue con el código Python con el que arrancó: si la
+vista usa un campo nuevo, la pantalla falla con `"modelo"."campo" field is undefined` hasta
+reiniciar. Así pasó con la Hoja de carga (campo `unidad_producto_id`).
 
 ### 1a. Reiniciar Odoo
 
@@ -45,8 +52,9 @@ Si el cambio fue en `duran_peso_variable`, poner `-u duran_peso_variable` (o
 
 Equivale a darle **Actualizar** al módulo en Aplicaciones. Lanza un segundo proceso de Odoo
 dentro del mismo contenedor que aplica los XML y los campos nuevos a duranDEV y **termina solo**
-(`--stop-after-init`). No abre ningún puerto (`--no-http`) ni detiene el servicio normal, que se
-entera del cambio y se recarga por su cuenta.
+(`--stop-after-init`). No abre ningún puerto (`--no-http`) ni detiene el servicio normal. El
+servicio normal toma los datos nuevos de la base (vistas, menús), pero **no** el código Python
+nuevo (modelos, campos, controladores): por eso después hay que reiniciarlo (1a).
 
 Debe terminar sin líneas `ERROR`. Al final aparece `Initiating shutdown`: es normal, es el
 proceso auxiliar cerrándose, no el Odoo de siempre.
