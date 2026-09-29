@@ -195,6 +195,7 @@ Hay que revisarlo a mano, en el celular:
 - El teclado, el zoom y el botón "atrás" físico de cada celular real.
 - Una red real que se cae a la mitad del envío (las pruebas lo simulan).
 - El inicio de sesión real y cuánto dura la sesión en el celular.
+- Que la Hoja de carga (backend de Odoo) quepa a lo ancho del celular: ver la sección 8.
 
 ## 7. Lista de verificación en el celular: modo Cobro
 
@@ -242,3 +243,23 @@ clientes de prueba (A y B) y un usuario del grupo "Captura tianguis".
    - Cada pago tiene la referencia "Cobro en tianguis #N", igual al número del cobro.
 9. **Al sol y con una mano.** Que el total, "Pagó todo" y el campo del monto se lean y se
    alcancen bien. Con un total de más de $1,000, revisar que se vea como "$1,234.50".
+
+## 8. Revisión a mano: hoja de carga en el celular
+
+Las pruebas automáticas revisan que la lista tenga solo 3 columnas (Producto, Demanda y Unidad),
+pero **no** la dibujan a 393 px. Las pruebas de pantalla usan el Chrome de la Mac con una página
+armada sin Odoo (`tests/pantalla/correr.mjs`), no pueden abrir el backend. Las pruebas de
+navegador de Odoo necesitan Chrome **dentro** del contenedor, y no lo tiene. Por eso esto se
+revisa a mano:
+
+1. Con el usuario del papá (o uno de gerente de Ventas), abrir en el celular Ventas › Órdenes ›
+   Hoja de carga.
+2. Sin girar el celular, la lista se ve completa **sin deslizar a los lados**: nombre del
+   producto, Demanda y Unidad, con el total de cada producto en su renglón.
+3. Con un nombre de producto largo, el nombre se corta o se acomoda, pero la Demanda y la
+   Unidad siguen visibles.
+4. Filtros **Hoy** y **Días anteriores**, y **Agrupar por › Zona**: se pueden escoger con el
+   dedo y la lista sigue sin deslizar a los lados.
+5. En la computadora, la misma lista, y que al volver a abrir el menú aparezcan los pedidos
+   nuevos que envió la mamá.
+
