@@ -158,6 +158,17 @@ class TestPendienteCobro(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         )
         self.assertEqual(self._grupos(("cliente_id",)), {(self.cliente.id,): 35.0})
 
+    def test_lo_facturado_desaparece(self):
+        """ Lo ya facturado (en la operación: ya se cobró en la app) sale del
+        reporte; lo entregado sin facturar sigue. """
+        facturada = self._entregada([(self.pieza, 2, 10.0)])
+        sin_facturar = self._entregada([(self.pieza, 3, 10.0)])
+        self.assertEqual(self._renglones().sale_line_id.order_id, facturada | sin_facturar)
+        facturada._create_invoices().action_post()
+        self.assertEqual(facturada.order_line.qty_to_invoice, 0.0)
+        self.assertEqual(self._renglones().sale_line_id.order_id, sin_facturar)
+        self.assertEqual(self._grupos(("cliente_id",)), {(self.cliente.id,): 30.0})
+
     # === Importe === #
 
     def test_importe_rollo_producto_normal_y_descuento(self):

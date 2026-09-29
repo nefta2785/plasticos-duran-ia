@@ -47,7 +47,9 @@
 
     <!-- Entregado = misma regla que el modo Entrega (duran.captura,
          _entregas_pendientes: salida a cliente, ligada a una venta, que no es
-         devolución), con el movimiento hecho. Los cancelados no entran. -->
+         devolución), con el movimiento hecho. Los cancelados no entran. Lo
+         ya facturado (al cobrarlo en la app) tampoco: solo entra si a su línea
+         de venta le queda algo por facturar. -->
     <record id="pendiente_cobro_action" model="ir.actions.act_window">
         <field name="name">Pendiente de cobro</field>
         <field name="res_model">stock.move</field>
@@ -61,6 +63,7 @@
             ('picking_id.sale_id', '!=', False),
             ('picking_id.return_id', '=', False),
             ('state', '=', 'done'),
+            ('sale_line_id.qty_to_invoice', '&gt;', 0),
         ]</field>
         <field name="context">{'search_default_hoy': 1, 'search_default_agrupar_zona': 1, 'search_default_agrupar_cliente': 2}</field>
         <field name="help" type="html">
