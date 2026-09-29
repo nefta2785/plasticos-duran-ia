@@ -603,6 +603,7 @@ button {
     color: var(--peligro);
     font-weight: 800;
 }
+.aviso-cobro.bajo-total { margin: 16px 0 0; }
 .cobro-credito .resumen-importe { color: var(--exito); }
 .total-cobro .total-monto { font-size: 40px; }
 .acciones-cobro { margin-top: 24px; }

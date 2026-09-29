@@ -22,6 +22,7 @@ async function pasoInicio() {
         [false, false, false]
     );
     check("Inicio: no llama al servidor", llamadas.length, 0);
+    checkAncho("Inicio");
 
     modo("Pedido").click();
     await espera(80);
@@ -606,6 +607,18 @@ const mensajeMonto = () => {
     return nodo && !nodo.hidden ? nodo.textContent : null;
 };
 
+function checkAvisoBajoTotal(cliente) {
+    // Justo debajo del total, el mismo texto del aviso que bloquea de arriba.
+    const arriba = qa(".aviso-cobro.bloquea");
+    const bajoTotal = q(".total-cobro").nextElementSibling;
+    check(
+        `${cliente}: debajo del total se repite el aviso que bloquea`,
+        [arriba.length, bajoTotal && bajoTotal.matches(".aviso-cobro.bloquea") ? bajoTotal.textContent : null],
+        [2, "Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."]
+    );
+    check(`${cliente}: el aviso de abajo es el mismo que el de arriba`, arriba[0].textContent === arriba[1]?.textContent, true);
+}
+
 async function pasoCobroClientes() {
     await irAInicio();
     modo("Cobro").click();
@@ -620,7 +633,7 @@ async function pasoCobroClientes() {
     check(
         "Cobro: solo clientes con algo por cobrar (ruta de Cobro)",
         [qa(".lista .btn").map((b) => b.textContent), llamadasA("cobro/clientes")],
-        [["Doña Carmen", "Don Beto", "Cliente con historial"], 2]
+        [["Doña Carmen", "Don Beto", "Mario fruta", "Cliente con historial"], 2]
     );
 }
 
@@ -638,6 +651,28 @@ async function pasoCobroAvisos() {
         [false, false, false, null]
     );
     check("Borrador: el total se ve", txt(".total-cobro .total-monto"), "$325.00");
+    checkAvisoBajoTotal("Borrador");
+    checkAncho("detalle de cobro bloqueado (Don Beto)");
+    await regresar();
+
+    // Regresión (Mario fruta en duranDEV): líneas entregadas, con productos
+    // repetidos, más saldo anterior y una factura en borrador. Con tantas
+    // líneas el aviso de arriba no se ve junto al total: debajo del total,
+    // donde irían los botones, debe decir por qué no se puede cobrar.
+    boton("Mario fruta").click();
+    await espera(120);
+    check(
+        "Mario fruta: 5 líneas entregadas, saldo anterior y total",
+        [qa(".cobro-entregado").length, importesCobro(".cobro-anterior"), txt(".total-cobro .total-monto")],
+        [5, [["INV/2026/00019", "Del 24/09/2026", "$118.00"]], "$544.50"]
+    );
+    check(
+        "Mario fruta: sin botones de pago",
+        [hayBoton("Pagó todo"), hayBoton("Pagó una parte"), hayBoton("No pagó hoy"), q(".acciones-cobro")],
+        [false, false, false, null]
+    );
+    checkAvisoBajoTotal("Mario fruta");
+    checkAncho("detalle de cobro de Mario fruta");
     await regresar();
     boton("Cliente con historial").click();
     await espera(120);
@@ -765,8 +800,8 @@ async function pasoCobroEnviar() {
     check("Cobro registrado: recargar ya no pregunta", pideConfirmarAlSalir(), false);
     boton("Siguiente cliente de Bosques").click();
     await espera(120);
-    // Pedidos: Guadalupana, Bosques, dos «Regresar» y este.
-    check("Siguiente cliente: clientes por cobrar de la zona", [txt("#titulo"), llamadasA("cobro/clientes")], ["Bosques", 5]);
+    // Pedidos: Guadalupana, Bosques, tres «Regresar» y este.
+    check("Siguiente cliente: clientes por cobrar de la zona", [txt("#titulo"), llamadasA("cobro/clientes")], ["Bosques", 6]);
 }
 
 async function pasoCobroTodoYNada() {
@@ -826,6 +861,7 @@ window.addEventListener("load", async () => {
         for (const paso of PASOS) {
             pasoActual = paso.name;
             await paso();
+            checkAncho(`al terminar ${paso.name} (${txt("#titulo")})`);
         }
     })();
     try {

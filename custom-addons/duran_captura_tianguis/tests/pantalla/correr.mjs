@@ -44,11 +44,38 @@ const html = `<!DOCTYPE html>
 ${body}
 </html>`;
 
+// Chrome sin ventana no dibuja a menos de 500 px de ancho aunque se le pida
+// --window-size=393: la página se carga dentro de un marco (iframe) del tamaño
+// exacto del iPhone 16, 393 x 852, que sí es su ancho real de pantalla. El
+// marco copia los resultados a la página de afuera para --dump-dom.
+const ANCHO = 393;
+const ALTO = 852;
+const marco = `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"/></head>
+<body style="margin: 0">
+    <iframe id="celular" src="captura.html" style="display: block; width: ${ANCHO}px; height: ${ALTO}px; border: 0"></iframe>
+    <script>
+        const revisar = setInterval(() => {
+            const resultado = document.getElementById("celular").contentDocument?.getElementById("resultado-prueba");
+            if (resultado) {
+                clearInterval(revisar);
+                const copia = document.createElement("pre");
+                copia.id = "resultado-prueba";
+                copia.textContent = resultado.textContent;
+                document.body.append(copia);
+            }
+        }, 100);
+    </script>
+</body>
+</html>`;
+
 const temporal = mkdtempSync(join(tmpdir(), "captura-pantalla-"));
 let dom;
 try {
-    const pagina = join(temporal, "captura.html");
-    writeFileSync(pagina, html);
+    writeFileSync(join(temporal, "captura.html"), html);
+    const pagina = join(temporal, "marco.html");
+    writeFileSync(pagina, marco);
     dom = execFileSync(
         chrome,
         [
@@ -60,7 +87,7 @@ try {
             "--no-first-run",
             "--no-default-browser-check",
             "--allow-file-access-from-files",
-            "--window-size=390,844", // tamaño de celular
+            "--window-size=500,900", // el ancho de celular lo da el marco (ver arriba)
             "--virtual-time-budget=60000",
             "--dump-dom",
             url(pagina),

@@ -108,7 +108,10 @@ cualquier archivo de `static/` (JS o CSS), y antes de cada commit.
 
 Qué hace:
 
-- Abre la pantalla en Chrome **sin ventana** (headless), a tamaño de celular (390 × 844).
+- Abre la pantalla en Chrome **sin ventana** (headless) al tamaño del iPhone 16 (393 × 852).
+  Chrome sin ventana no dibuja a menos de 500 px de ancho aunque se le pida, así que la página
+  se carga dentro de un marco (iframe) de 393 × 852. En cada pantalla revisa que el ancho sea
+  el del celular y que nada se salga por los lados.
 - **No usa Odoo ni la base de datos**: arma la página con la plantilla, el CSS y el JS reales
   del módulo, y responde a la pantalla con datos simulados (`tests/pantalla/simulacion.js`).
 - Recorre la pantalla como quien captura (`tests/pantalla/escenario.js`): inicio (Pedido /
@@ -159,7 +162,7 @@ node custom-addons/duran_captura_tianguis/tests/pantalla/correr.mjs
 | Validaciones (cantidades, productos, zona, cliente, token) sin dejar órdenes a medias | `test_enviar.py` | Error del servidor |
 | Zona en la orden: vistas, agrupar por Zona, no se copia al duplicar, no se borra si está en uso | `test_zona_y_seguridad.py` | — |
 | Inicio con tres modos (Pedido, Entrega y Cobro); Regresar desde Zonas vuelve al Inicio, también después de enviar pedidos | — | Inicio |
-| Pantallas del modo Cobro: solo clientes con algo por cobrar; detalle con lo entregado sin facturar (peso de los rollos, precios e importes), saldo anterior (fecha y saldo), saldo a favor restado y TOTAL A COBRAR grande, montos siempre "$1,234.50"; borrador: aviso rojo sin botones de pago; devolución sin nota de crédito: aviso informativo; «Pagó todo» principal y las otras dos secundarias; «Pagó una parte» con teclado decimal, coma o punto, eco en vivo "Recibe … · Queda debiendo …" y sin continuar con vacío, 0, más del total o 3 decimales; «No pagó hoy» con confirmación extra; doble toque, sin señal y reintento con el mismo token; "cambiaron": mensaje y detalle recargado (token nuevo); aviso antes de recargar con un monto escrito; éxito "Cobrado" y "Queda debiendo", siguiente cliente y cambiar de zona | — | Cobro |
+| Pantallas del modo Cobro: solo clientes con algo por cobrar; detalle con lo entregado sin facturar (peso de los rollos, precios e importes), saldo anterior (fecha y saldo), saldo a favor restado y TOTAL A COBRAR grande, montos siempre "$1,234.50"; borrador: aviso rojo arriba y repetido debajo del total, sin botones de pago (también con líneas entregadas repetidas y saldo anterior, como Mario fruta); devolución sin nota de crédito: aviso informativo; «Pagó todo» principal y las otras dos secundarias; «Pagó una parte» con teclado decimal, coma o punto, eco en vivo "Recibe … · Queda debiendo …" y sin continuar con vacío, 0, más del total o 3 decimales; «No pagó hoy» con confirmación extra; doble toque, sin señal y reintento con el mismo token; "cambiaron": mensaje y detalle recargado (token nuevo); aviso antes de recargar con un monto escrito; éxito "Cobrado" y "Queda debiendo", siguiente cliente y cambiar de zona | — | Cobro |
 | Pantallas del modo Entrega: solo clientes con pendientes; lista por producto con precio, un campo de peso por rollo con eco "1.250 kg · $106.25", marca "Sin existencia en sistema", «No se lo llevó» en todo renglón (y deshacer), "−" que no baja de 1; peso vacío bloquea y señala el rollo; peso bloqueado regresa a la lista con motivo y sugerencia; advertencias confirmadas una por una; resumen con importes, lo no llevado aparte y total; cliente que no se lleva nada con confirmación extra; doble toque, sin señal y reintento con el mismo token; otra persona cambió algo (recarga sin perder pesos); éxito con "Cobrar"; "El cliente quiere algo más" y regreso | — | Entrega |
 | Modo Entrega, rutas de lectura: clientes de la zona con entregas de venta pendientes (sin validadas, canceladas, devoluciones, "Devolución a proveedor" ni salidas sin orden de venta); todas las pendientes sin importar vendedor ni zona de la orden; agrupado por producto de la orden más antigua a la más nueva, rollos uno por uno, marca "sin existencia en sistema", precios (por kg vigente / de la línea de venta); no lee clientes de otra zona ni fuera de zonas | `test_entrega_lectura.py` (sin grupo y sin sesión también en `test_pagina_y_rutas.py`) | — |
 | Modo Entrega, vista previa: total igual al de la factura real (rollos y productos mezclados, dos facturas, con y sin IVA) e importe por línea igual al de su línea de factura; precio por kg vigente; rechaza rollos/productos que no son del cliente o no están pendientes, repetidos, cantidades no enteras o mayores a lo pendiente; bloqueos y advertencias de peso con los límites de los parámetros del sistema; sugerencia "1250 → 1.250"; no escribe nada en la base | `test_entrega_vista_previa.py` | — |
@@ -217,7 +220,8 @@ clientes de prueba (A y B) y un usuario del grupo "Captura tianguis".
    En Odoo, la factura de B queda publicada y "No pagado". Al volver a Cobro › B aparece
    como saldo anterior.
 5. **Factura en borrador.** En Odoo, crear para B una factura sin confirmarla. Cobro › B:
-   aviso rojo "Este cliente tiene una factura en borrador…" y sin botones de pago. Publicarla
+   aviso rojo "Este cliente tiene una factura en borrador…" arriba y otra vez debajo del
+   total, y sin botones de pago. Publicarla
    o cancelarla en Odoo y volver a abrir a B: ya se puede cobrar.
 6. **Otra persona cobra a la vez.** Abrir Cobro › B en el celular y quedarse en el detalle.
    En Odoo, registrar un pago de $10 a una factura de B. En el celular, "Pagó todo" ›

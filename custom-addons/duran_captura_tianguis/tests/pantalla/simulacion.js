@@ -91,6 +91,8 @@ function enviarSimulado(params) {
 const ESTRELLA = { id: 464, nombre: "Estrella 25x35", unidad: "c/u", es_peso_variable: true, precio: 85, precio_texto: "$85/kg" };
 const BLANCA = { id: 440, nombre: "Blanca #2", unidad: "kg", es_peso_variable: false, precio: 70, precio_texto: "$70/kg" };
 const CAJA = { id: 409, nombre: "Caja 25x35 (5kg)", unidad: "c/u", es_peso_variable: false, precio: 325, precio_texto: "$325 c/u" };
+const BOLSA_BASURA = { id: 470, nombre: "Bolsa de basura 60x90", unidad: "kg", es_peso_variable: false, precio: 45, precio_texto: "$45/kg" };
+const SUIZO = { id: 471, nombre: "Suizo 18x25", unidad: "kg", es_peso_variable: false, precio: 67, precio_texto: "$67/kg" };
 const mov = (move_id, cantidad, sin_existencia, precio) => ({
     move_id, cantidad, reservada: sin_existencia ? 0 : cantidad, sin_existencia, precio,
 });
@@ -106,6 +108,30 @@ const pendientes = {
             { ...BLANCA, cantidad: 3, sin_existencia: false, movimientos: [mov(103, 3, false, 70)] },
             ...(otraPersonaCambio ? [] : [{ ...CAJA, cantidad: 2, sin_existencia: true, movimientos: [mov(104, 2, true, 325)] }]),
         ],
+    }),
+    // Como Mario fruta en duranDEV: líneas entregadas (productos repetidos),
+    // saldo anterior y una factura en borrador de otra orden.
+    11: () => ({
+        cliente: { id: 11, nombre: "Mario fruta" },
+        entregado: [
+            { linea_id: 331, orden: "S00070", ...BOLSA_BASURA, cantidad: 3, peso: null, importe: 135 },
+            { linea_id: 332, orden: "S00070", ...SUIZO, cantidad: 1.5, peso: null, importe: 100.5 },
+            { linea_id: 333, orden: "S00070", ...ESTRELLA, precio: 85, cantidad: 1, peso: 0.4, importe: 34 },
+            { linea_id: 334, orden: "S00071", ...BOLSA_BASURA, cantidad: 2, peso: null, importe: 90 },
+            { linea_id: 335, orden: "S00071", ...SUIZO, cantidad: 1, peso: null, importe: 67 },
+        ],
+        total_entregado: 426.5,
+        saldo_anterior: [{ move_id: 521, folio: "INV/2026/00019", fecha: "2026-09-24", total: 118, saldo: 118 }],
+        total_saldo_anterior: 118,
+        creditos: [],
+        total_creditos: 0,
+        total_a_cobrar: 544.5,
+        saldo_a_favor: 0,
+        borradores: [{ move_id: 602, folio: "Borrador", origen: "S00062", total: 323.5 }],
+        devoluciones: [],
+        avisos: ["Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."],
+        puede_cobrar: false,
+        visto: { lineas: [[331, 3], [332, 1.5], [333, 1], [334, 2], [335, 1]], documentos: [[521, 118]], borradores: [602] },
     }),
     12: () => ({
         cliente: { id: 12, nombre: "Cliente con historial" },
@@ -249,6 +275,30 @@ const detallesCobro = {
         puede_cobrar: false,
         visto: { lineas: [[311, 1]], documentos: [], borradores: [601] },
     }),
+    // Como Mario fruta en duranDEV: líneas entregadas (productos repetidos),
+    // saldo anterior y una factura en borrador de otra orden.
+    11: () => ({
+        cliente: { id: 11, nombre: "Mario fruta" },
+        entregado: [
+            { linea_id: 331, orden: "S00070", ...BOLSA_BASURA, cantidad: 3, peso: null, importe: 135 },
+            { linea_id: 332, orden: "S00070", ...SUIZO, cantidad: 1.5, peso: null, importe: 100.5 },
+            { linea_id: 333, orden: "S00070", ...ESTRELLA, precio: 85, cantidad: 1, peso: 0.4, importe: 34 },
+            { linea_id: 334, orden: "S00071", ...BOLSA_BASURA, cantidad: 2, peso: null, importe: 90 },
+            { linea_id: 335, orden: "S00071", ...SUIZO, cantidad: 1, peso: null, importe: 67 },
+        ],
+        total_entregado: 426.5,
+        saldo_anterior: [{ move_id: 521, folio: "INV/2026/00019", fecha: "2026-09-24", total: 118, saldo: 118 }],
+        total_saldo_anterior: 118,
+        creditos: [],
+        total_creditos: 0,
+        total_a_cobrar: 544.5,
+        saldo_a_favor: 0,
+        borradores: [{ move_id: 602, folio: "Borrador", origen: "S00062", total: 323.5 }],
+        devoluciones: [],
+        avisos: ["Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."],
+        puede_cobrar: false,
+        visto: { lineas: [[331, 3], [332, 1.5], [333, 1], [334, 2], [335, 1]], documentos: [[521, 118]], borradores: [602] },
+    }),
     12: () => ({
         cliente: { id: 12, nombre: "Cliente con historial" },
         entregado: [],
@@ -301,7 +351,10 @@ function confirmarCobroSimulado(p) {
 const datosCobro = {
     "/captura/api/cobro/clientes": (p) =>
         p.zona_id === 1
-            ? [{ id: 9, nombre: "Doña Carmen" }, { id: 21, nombre: "Don Beto" }, { id: 12, nombre: "Cliente con historial" }]
+            ? [
+                  { id: 9, nombre: "Doña Carmen" }, { id: 21, nombre: "Don Beto" }, { id: 11, nombre: "Mario fruta" },
+                  { id: 12, nombre: "Cliente con historial" },
+              ]
             : [],
     "/captura/api/cobro/detalle": (p) => detallesCobro[p.cliente_id](),
 };
@@ -405,6 +458,38 @@ async function tocarProducto(id, veces = 1) {
 async function regresar() {
     q("#btn-regresar").click();
     await espera(120);
+}
+
+// Tamaño de pantalla del iPhone 16 (correr.mjs carga la página en un marco de
+// este tamaño).
+const CELULAR = [393, 852];
+
+function desbordados() {
+    // Elementos visibles que se salen por los lados de la pantalla, salvo los
+    // que están dentro de algo que se desliza a lo ancho a propósito (pestañas).
+    const ancho = document.documentElement.clientWidth;
+    return qa("body *")
+        .filter((e) => {
+            const r = e.getBoundingClientRect();
+            if (!r.width || (r.left >= -0.5 && r.right <= ancho + 0.5)) {
+                return false;
+            }
+            for (let p = e.parentElement; p; p = p.parentElement) {
+                if (["auto", "scroll"].includes(getComputedStyle(p).overflowX)) {
+                    return false;
+                }
+            }
+            return true;
+        })
+        .map((e) => `${e.tagName.toLowerCase()}.${[...e.classList].join(".")} «${e.textContent.trim().slice(0, 30)}»`);
+}
+
+function checkAncho(pantalla) {
+    check(
+        `Ancho de celular (${CELULAR.join(" x ")}), sin salirse por los lados: ${pantalla}`,
+        [[window.innerWidth, window.innerHeight], document.documentElement.scrollWidth <= document.documentElement.clientWidth, desbordados()],
+        [CELULAR, true, []]
+    );
 }
 
 function check(nombre, obtenido, esperado) {

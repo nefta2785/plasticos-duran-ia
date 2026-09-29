@@ -1608,6 +1608,9 @@
                 el("span", { class: "total-monto", text: dinero.format(d.total_a_cobrar) })
             ),
             d.saldo_a_favor > 0 ? el("p", { class: "nota", text: `Le quedan ${dinero.format(d.saldo_a_favor)} a favor.` }) : null,
+            // Cobro bloqueado: se repite el aviso debajo del total, donde irían
+            // los botones de pago (con muchas líneas, el de arriba ya no se ve).
+            bloqueado ? el("p", { class: "aviso-cobro bloquea bajo-total", text: d.avisos[0] }) : null,
             acciones ? el("div", { class: "acciones-cobro" }, acciones) : null
         );
     }
