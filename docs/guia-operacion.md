@@ -52,6 +52,9 @@ efectivo. **Esa factura también está saldada**: el cliente ya no la debe.
 
 ## 6. Otras reglas importantes
 
+**Si en el celular llegan a Odoo por error**, toquen la app **Captura** en el menú de Odoo:
+los regresa a la pantalla de captura.
+
 **Cobren siempre con la app.** Si un pago se anota directamente en Odoo, ese dinero **no aparece
 en "Cobros en tianguis"** y no sale en el corte del día. La deuda del cliente sí baja, pero el
 corte no lo cuenta.
