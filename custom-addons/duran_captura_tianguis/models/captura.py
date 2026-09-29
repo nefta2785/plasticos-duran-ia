@@ -5,7 +5,7 @@ from datetime import timedelta
 from markupsafe import Markup
 
 from odoo import Command, _, api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import LockError, UserError
 from odoo.tools import float_round, format_amount
 
 # "Lo de siempre": órdenes confirmadas de los últimos DIAS_HABITUALES días,
@@ -850,8 +850,16 @@ class DuranCaptura(models.AbstractModel):
         Órdenes, facturas y saldos se leen con sudo: pueden ser de otro
         vendedor ("Ventas: solo sus documentos" no deja leerlos). El sudo solo
         lee, y solo lo de este cliente (y sus direcciones) en las compañías
-        del usuario. """
-        cliente = self._cliente_en_zona(cliente_id, self._zona(zona_id))
+        del usuario.
+
+        `visto` resume lo anterior (líneas y cantidades por facturar,
+        documentos y saldos, borradores): la pantalla lo devuelve tal cual al
+        confirmar, para saber si algo cambió desde que se mostró. """
+        return self._cobro(self._cliente_en_zona(cliente_id, self._zona(zona_id)))
+
+    @api.model
+    def _cobro(self, cliente):
+        """ Lo de `get_cobro` para un cliente ya validado. """
         currency = self.env.company.currency_id
         uom_unidad = self.env.ref("uom.product_uom_unit", raise_if_not_found=False)
 
@@ -936,6 +944,227 @@ class DuranCaptura(models.AbstractModel):
             ],
             "avisos": avisos,
             "puede_cobrar": not borradores and bool(por_facturar or saldo_anterior),
+            "visto": {
+                "lineas": [[renglon["linea_id"], renglon["cantidad"]] for renglon in entregado],
+                "documentos": [[documento["move_id"], documento["saldo"]] for documento in saldo_anterior + creditos],
+                "borradores": [borrador["move_id"] for borrador in borradores],
+            },
+        }
+
+    @api.model
+    def confirmar_cobro(self, cliente_id, zona_id, tipo, visto, token):
+        """ Confirma el cobro al cliente en una sola transacción: factura lo
+        entregado sin facturar, publica las facturas, le aplica su saldo a
+        favor a sus facturas abiertas y registra la bitácora. Si algo falla,
+        no queda nada.
+
+        :param tipo: cómo pagó. Por ahora solo "nada" ("No pagó hoy": las
+            facturas quedan publicadas y sin pago).
+        :param visto: el `visto` de `get_cobro`, tal cual. Se bloquean las
+            órdenes y facturas del cliente y se vuelve a calcular el cobro; si
+            algo cambió desde que se mostró (alguien facturó, cobró o dejó una
+            factura en borrador desde Odoo), no se hace nada y se responde
+            `cambiaron` con el detalle nuevo.
+        :param token: identificador de este cobro generado por la pantalla. Si
+            ya hay un cobro registrado con ese token (doble toque, reintento
+            sin señal), se devuelve ese en lugar de repetirlo.
+
+        Permiso acotado (sudo): quien cobra no puede facturar ni conciliar, y
+        las órdenes y facturas pueden ser de otro vendedor. Con sudo SOLO se
+        facturan las órdenes del cliente con lo entregado sin facturar
+        (`_create_invoices`; sin sudo Odoo devolvería una factura vacía), se
+        publican esas facturas y se concilia el saldo a favor del cliente con
+        sus facturas abiertas. Todo sale de lo que calcula el servidor para
+        este cliente, nunca de ids que mande la pantalla. sudo conserva al
+        usuario: "Creado por" y el autor en el historial son quien cobra. """
+        token = self._validar_token(token, _("el cobro"))
+        ya_registrado = self.env["duran.captura.cobro"].search([("token", "=", token)], limit=1)
+        if ya_registrado:
+            return self._resultado_cobro(ya_registrado, ya_existia=True)
+        if tipo != "nada":
+            raise UserError(_("Por ahora solo se puede registrar «No pagó hoy»."))
+        visto = self._normalizar_visto(visto)
+        zona = self._zona(zona_id)
+        cliente = self._cliente_en_zona(cliente_id, zona)
+
+        self._bloquear_cobro(cliente)
+        cobro = self._cobro(cliente)
+        if self._normalizar_visto(cobro["visto"]) != visto:
+            return {"cambiaron": True, "cobro": cobro}
+        if cobro["borradores"]:
+            raise UserError(_("Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."))
+        if not cobro["puede_cobrar"]:
+            raise UserError(_("Este cliente no tiene nada que cobrar."))
+
+        currency = self.env.company.currency_id
+        facturas = self._facturar_cobro(cliente, cobro)
+        documentos = self._aplicar_saldo_a_favor(cliente, facturas)
+        saldo_pendiente = currency.round(sum(
+            documento["despues"] for documento in documentos if documento["tipo"] != "credito"
+        ))
+        if currency.compare_amounts(saldo_pendiente, cobro["total_a_cobrar"]) != 0:
+            raise UserError(_(
+                "El saldo que quedaría (%(saldo)s) no coincide con el total mostrado (%(total)s). "
+                "No se registró nada: regresa y vuelve a abrir al cliente.",
+                saldo=self._formato_precio(saldo_pendiente, currency, centavos=True),
+                total=cobro["total_a_cobrar_texto"],
+            ))
+        registro = self.env["duran.captura.cobro"].create({
+            "token": token,
+            "partner_id": cliente.id,
+            "zona_id": zona.id,
+            "tipo": tipo,
+            "total_entregado": cobro["total_entregado"],
+            "saldo_anterior": cobro["total_saldo_anterior"],
+            "creditos": cobro["total_creditos"],
+            "total_a_cobrar": cobro["total_a_cobrar"],
+            "monto_recibido": 0.0,
+            "saldo_pendiente": saldo_pendiente,
+            "linea_ids": [
+                Command.create({
+                    "move_id": documento["move"].id,
+                    "tipo": documento["tipo"],
+                    "saldo_antes": documento["antes"],
+                    "aplicado": currency.round(documento["antes"] - documento["despues"]),
+                    "saldo_despues": documento["despues"],
+                })
+                for documento in documentos
+            ],
+        })
+        return self._resultado_cobro(registro, ya_existia=False)
+
+    @api.model
+    def _normalizar_visto(self, visto):
+        """ `visto` de `get_cobro` como conjuntos comparables. Datos con otra
+        forma: error. """
+        invalido = UserError(_("El cobro trae datos inválidos. Recarga la página."))
+        if not isinstance(visto, dict) or set(visto) != {"lineas", "documentos", "borradores"}:
+            raise invalido
+
+        def pares(valores, decimales):
+            if not isinstance(valores, list):
+                raise invalido
+            resultado = set()
+            for par in valores:
+                if (
+                    not isinstance(par, list) or len(par) != 2 or not self._es_entero(par[0])
+                    or isinstance(par[1], bool) or not isinstance(par[1], (int, float))
+                ):
+                    raise invalido
+                resultado.add((par[0], round(par[1], decimales)))
+            return frozenset(resultado)
+
+        borradores = visto["borradores"]
+        if not isinstance(borradores, list) or not all(self._es_entero(b) for b in borradores):
+            raise invalido
+        return (pares(visto["lineas"], 6), pares(visto["documentos"], 2), frozenset(borradores))
+
+    @api.model
+    def _bloquear_cobro(self, cliente):
+        """ Bloquea (hasta terminar la transacción) las órdenes y líneas por
+        facturar, las facturas en borrador y los documentos con saldo del
+        cliente, para que nadie los cambie mientras se cobra. Si alguien los
+        tiene bloqueados en este momento, se pide intentar de nuevo. """
+        lineas = self._lineas_sin_facturar(cliente)
+        apuntes = self._saldos_abiertos(cliente)
+        try:
+            lineas.order_id.lock_for_update()
+            lineas.lock_for_update()
+            (apuntes.move_id | self._facturas_borrador(cliente)).lock_for_update()
+            apuntes.lock_for_update()
+        except LockError:
+            raise UserError(_(
+                "Alguien está modificando las órdenes o facturas de este cliente en este momento. "
+                "Espera unos segundos e intenta de nuevo."
+            )) from None
+        self.env.invalidate_all()
+
+    @api.model
+    def _facturar_cobro(self, cliente, cobro):
+        """ Factura (con sudo, ver `confirmar_cobro`) lo entregado sin facturar
+        del cliente, como Odoo (una factura por dirección) y sin devoluciones,
+        y publica las facturas. Revisa que sean exactamente las líneas y el
+        total que se mostraron. """
+        por_facturar = self._lineas_sin_facturar(cliente).filtered(self._por_facturar)
+        if not por_facturar:
+            return self.env["account.move"]
+        facturas = por_facturar.order_id._create_invoices(grouped=False, final=False)
+        currency = self.env.company.currency_id
+        if (
+            facturas.invoice_line_ids.sale_line_ids.filtered(lambda l: not l.display_type) != por_facturar
+            or currency.compare_amounts(sum(facturas.mapped("amount_total")), cobro["total_entregado"]) != 0
+        ):
+            raise UserError(_(
+                "Las facturas no coinciden con lo que se mostró. No se registró nada: regresa y vuelve "
+                "a abrir al cliente."
+            ))
+        facturas.action_post()
+        if set(facturas.mapped("state")) != {"posted"}:
+            raise UserError(_("No se pudieron publicar las facturas."))
+        return facturas
+
+    @api.model
+    def _aplicar_saldo_a_favor(self, cliente, facturas):
+        """ Aplica (con sudo, ver `confirmar_cobro`) el saldo a favor del
+        cliente a sus facturas abiertas, incluidas las recién creadas, en el
+        orden de Odoo (la más antigua primero). Devuelve cada documento con su
+        saldo antes y después, en positivo: facturas nuevas, facturas
+        anteriores y saldos a favor. """
+        apuntes = self._saldos_abiertos(cliente)
+        creditos = apuntes.filtered(lambda a: a.amount_residual < 0)
+        cargos = apuntes - creditos
+
+        def saldos():
+            por_documento = defaultdict(float)
+            for apunte in apuntes:
+                por_documento[apunte.move_id] += apunte.amount_residual
+            return por_documento
+
+        antes = saldos()
+        if creditos and cargos:
+            for cuenta in creditos.account_id:
+                (creditos | cargos).filtered(lambda a: a.account_id == cuenta).reconcile()
+            apuntes.invalidate_recordset(["amount_residual"])
+        despues = saldos()
+
+        currency = self.env.company.currency_id
+        orden_odoo = [documento["move_id"] for documento in self._documentos_con_saldo(apuntes)]
+        documentos = []
+        for documento in sorted(antes, key=lambda d: orden_odoo.index(d.id)):
+            if documento in facturas:
+                tipo = "nueva"
+            elif antes[documento] < 0:
+                tipo = "credito"
+            else:
+                tipo = "anterior"
+            documentos.append({
+                "move": documento,
+                "tipo": tipo,
+                "antes": currency.round(abs(antes[documento])),
+                "despues": currency.round(abs(despues[documento])),
+            })
+        orden_tipo = {"nueva": 0, "anterior": 1, "credito": 2}
+        return sorted(documentos, key=lambda documento: orden_tipo[documento["tipo"]])
+
+    @api.model
+    def _resultado_cobro(self, registro, ya_existia):
+        currency = registro.currency_id
+        nuevas = registro.linea_ids.filtered(lambda l: l.tipo == "nueva")
+        return {
+            "cambiaron": False,
+            "id": registro.id,
+            "cliente": registro.partner_id.name,
+            "tipo": registro.tipo,
+            "total_a_cobrar": registro.total_a_cobrar,
+            "total_a_cobrar_texto": self._formato_precio(registro.total_a_cobrar, currency, centavos=True),
+            "monto_recibido": registro.monto_recibido,
+            "saldo_pendiente": registro.saldo_pendiente,
+            "saldo_pendiente_texto": self._formato_precio(registro.saldo_pendiente, currency, centavos=True),
+            # Folios con sudo: solo las facturas de este cobro (pueden ser de otro vendedor).
+            "facturas": [
+                {"folio": linea.move_id.sudo().name, "total": linea.saldo_antes} for linea in nuevas
+            ],
+            "ya_existia": ya_existia,
         }
 
     @api.model

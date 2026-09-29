@@ -24,7 +24,7 @@ RUTAS_ENTREGA = (
 RUTAS_API = RUTAS_PEDIDO + RUTAS_ENTREGA
 # Rutas del modo Cobro. Aún sin pantallas: se suman a RUTAS_API cuando la
 # pantalla las use.
-RUTAS_COBRO = ("/captura/api/cobro/clientes", "/captura/api/cobro/detalle")
+RUTAS_COBRO = ("/captura/api/cobro/clientes", "/captura/api/cobro/detalle", "/captura/api/cobro/confirmar")
 
 
 class CapturaDatosPrueba:
@@ -179,6 +179,11 @@ class CapturaHttpMixin:
         """ Parámetros válidos para cada ruta de RUTAS_API. """
         if ruta.endswith("clientes"):
             return {"zona_id": self.zona_con_clientes.id}
+        if ruta.endswith("cobro/confirmar"):
+            return {
+                "cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id, "tipo": "nada",
+                "visto": {"lineas": [], "documentos": [], "borradores": []}, "token": uuid.uuid4().hex,
+            }
         if ruta.endswith("entrega/confirmar"):
             return {
                 "cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id,

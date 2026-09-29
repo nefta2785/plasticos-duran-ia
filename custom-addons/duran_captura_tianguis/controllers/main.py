@@ -85,3 +85,7 @@ class CapturaTianguis(http.Controller):
     @http.route("/captura/api/cobro/detalle", type="jsonrpc", auth="user", methods=["POST"])
     def api_cobro_detalle(self, cliente_id, zona_id):
         return self._captura().get_cobro(cliente_id, zona_id)
+
+    @http.route("/captura/api/cobro/confirmar", type="jsonrpc", auth="user", methods=["POST"])
+    def api_cobro_confirmar(self, cliente_id, zona_id, tipo, visto, token):
+        return self._captura().confirmar_cobro(cliente_id, zona_id, tipo, visto, token)
