@@ -119,6 +119,7 @@ class TestCobroPago(CobroDatosPrueba, HttpCase):
         otro = self.env["account.journal"].create({"name": "Efectivo 2 prueba", "code": "CPR2", "type": "cash"})
         mensaje = self._error(self._params(tipo="todo"))["message"]
         self.assertIn("exactamente un diario de tipo Efectivo, y hay 2", mensaje)
+        self.assertIn("Facturación › Configuración › Contabilidad › Diarios", mensaje, "la ruta real del menú")
         self.assertEqual(self._foto(), antes)
         (self.efectivo | otro).action_archive()
         mensaje = self._error(self._params(tipo="parte", monto=5))["message"]

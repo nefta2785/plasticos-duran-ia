@@ -13,7 +13,7 @@ from .common import GRUPO_CAPTURA, CapturaDatosPrueba, CapturaHttpMixin
 
 RUTA_CLIENTES = "/captura/api/cobro/clientes"
 RUTA_DETALLE = "/captura/api/cobro/detalle"
-AVISO_BORRADOR = "Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."
+AVISO_BORRADOR = "Este cliente tiene una factura en borrador; confírmala o cancélala en Odoo."
 
 
 @tagged("post_install", "-at_install")

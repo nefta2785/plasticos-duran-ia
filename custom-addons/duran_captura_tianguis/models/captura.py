@@ -907,7 +907,7 @@ class DuranCaptura(models.AbstractModel):
         ]
         avisos = []
         if borradores:
-            avisos.append(_("Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."))
+            avisos.append(_("Este cliente tiene una factura en borrador; confírmala o cancélala en Odoo."))
         if devoluciones:
             avisos.append(_(
                 "Hay devoluciones sin nota de crédito (%(ordenes)s). No entran en este cobro: haz la "
@@ -998,7 +998,7 @@ class DuranCaptura(models.AbstractModel):
         if self._normalizar_visto(cobro["visto"]) != visto:
             return {"cambiaron": True, "cobro": cobro}
         if cobro["borradores"]:
-            raise UserError(_("Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."))
+            raise UserError(_("Este cliente tiene una factura en borrador; confírmala o cancélala en Odoo."))
         if not cobro["puede_cobrar"]:
             raise UserError(_("Este cliente no tiene nada que cobrar."))
 
@@ -1081,8 +1081,8 @@ class DuranCaptura(models.AbstractModel):
         if len(diarios) != 1:
             raise UserError(_(
                 "Para registrar el efectivo debe haber exactamente un diario de tipo Efectivo, y hay "
-                "%(cuantos)s. Pide que lo revisen en Facturación › Configuración › Diarios. No se "
-                "registró nada.",
+                "%(cuantos)s. Pide que lo revisen en Facturación › Configuración › Contabilidad › "
+                "Diarios. No se registró nada.",
                 cuantos=len(diarios),
             ))
         return diarios

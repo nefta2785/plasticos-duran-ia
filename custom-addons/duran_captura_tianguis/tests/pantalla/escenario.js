@@ -614,7 +614,7 @@ function checkAvisoBajoTotal(cliente) {
     check(
         `${cliente}: debajo del total se repite el aviso que bloquea`,
         [arriba.length, bajoTotal && bajoTotal.matches(".aviso-cobro.bloquea") ? bajoTotal.textContent : null],
-        [2, "Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."]
+        [2, "Este cliente tiene una factura en borrador; confírmala o cancélala en Odoo."]
     );
     check(`${cliente}: el aviso de abajo es el mismo que el de arriba`, arriba[0].textContent === arriba[1]?.textContent, true);
 }
@@ -643,7 +643,7 @@ async function pasoCobroAvisos() {
     check(
         "Borrador: aviso que bloquea, con el texto acordado",
         txt(".aviso-cobro.bloquea"),
-        "Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."
+        "Este cliente tiene una factura en borrador; confírmala o cancélala en Odoo."
     );
     check(
         "Borrador: sin botones de pago",

@@ -11,7 +11,7 @@ from .common import GRUPO_CAPTURA, CapturaDatosPrueba, CapturaHttpMixin
 
 RUTA_DETALLE = "/captura/api/cobro/detalle"
 RUTA_CONFIRMAR = "/captura/api/cobro/confirmar"
-AVISO_BORRADOR = "Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."
+AVISO_BORRADOR = "Este cliente tiene una factura en borrador; confírmala o cancélala en Odoo."
 
 
 class CobroDatosPrueba(CapturaDatosPrueba, CapturaHttpMixin):

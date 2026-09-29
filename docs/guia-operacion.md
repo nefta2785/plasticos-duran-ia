@@ -26,7 +26,7 @@ Si se cambia una factura ya pagada, lo que se cobró deja de cuadrar con lo que 
 
 | Lo que dice la app | Qué pasa | Qué hacer |
 |---|---|---|
-| **"Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."** (aviso rojo, arriba y abajo del total, sin botones de pago) | Hay una factura de ese cliente sin confirmar. Mientras exista, la app no le cobra. | En Odoo, abrir esa factura y tocar **Confirmar** ("publicarla" es lo mismo que confirmarla). Si ya no sirve, tocar **Cancelar**. Luego volver a abrir al cliente en la app. |
+| **"Este cliente tiene una factura en borrador; confírmala o cancélala en Odoo."** (aviso rojo, arriba y abajo del total, sin botones de pago) | Hay una factura de ese cliente sin confirmar. Mientras exista, la app no le cobra. | En Odoo, abrir esa factura y tocar **Confirmar**. Si ya no sirve, tocar **Cancelar**. Luego volver a abrir al cliente en la app. |
 | **"Hay devoluciones sin nota de crédito (S000…). No entran en este cobro: haz la nota de crédito en Odoo."** | El cliente regresó mercancía y todavía no se hizo el papel que se lo descuenta. Sí se le puede cobrar, pero sin descontarle lo que regresó. | Cobrar normal. Después, en Odoo, abrir esa orden, tocar **Crear factura**: sale la **Nota de crédito**. Tocarle **Confirmar** (si no, se queda en Borrador y bloquea el siguiente cobro). En el siguiente cobro se le descuenta sola. |
 | **"Otra persona facturó o cobró a este cliente mientras tanto. Se volvió a cargar lo que debe: revisa el total y cobra otra vez."** | Mientras cobraban, alguien más movió la cuenta de ese cliente (por ejemplo, registró un pago en Odoo). **No se registró nada.** | Revisar el total nuevo y volver a tocar cómo pagó. |
 | **"No se pudo confirmar si el cobro llegó. Toca «Registrar cobro» otra vez: si ya había llegado, no se duplica."** | Se fue la señal justo al registrar. | Tocar **Registrar cobro** otra vez cuando haya señal. Aunque el cobro sí hubiera llegado, no se cobra dos veces. |
@@ -49,3 +49,30 @@ En Odoo: **Ventas › Órdenes › Cobros en tianguis**.
 En Odoo, en **Estado del pago**, una factura puede decir **Revertido** en lugar de **Pagado**.
 Pasa cuando se saldó completa con un saldo a favor del cliente (una nota de crédito) y no con
 efectivo. **Esa factura también está saldada**: el cliente ya no la debe.
+
+## 6. Otras reglas importantes
+
+**Cobren siempre con la app.** Si un pago se anota directamente en Odoo, ese dinero **no aparece
+en "Cobros en tianguis"** y no sale en el corte del día. La deuda del cliente sí baja, pero el
+corte no lo cuenta.
+
+**Debe haber una sola caja de Efectivo en Odoo.** En Facturación › Configuración › Contabilidad ›
+Diarios debe haber **uno solo** de tipo **Efectivo**. No creen otro ni archiven el que hay: si
+hay dos o ninguno, la app no puede registrar lo que pagan y avisa que hay que revisar los
+diarios.
+
+**Cambiar un producto que ya se llevó el cliente, solo después de que se le facturó.** Si el
+cliente quiere cambiar un rollo o un producto, primero tiene que estar en una factura (se hace
+sola al cobrarle con la app, aunque sea con "No pagó hoy"). Después ya se puede hacer el cambio
+en Odoo.
+
+**Al dar de alta un producto o cambiarle el Tipo**, revisen en la pestaña Información general:
+
+- "Política de facturación" debe decir **Cantidades entregadas**. Si le cambian el Tipo al
+  producto, Odoo lo regresa solo a "Cantidades pedidas": hay que volver a ponerlo.
+- "Impuestos de venta" debe estar **vacío**. Si tiene un impuesto, el cliente pagaría más que el
+  precio del tianguis.
+
+**Un cobro no se puede deshacer desde la app.** Si se registró mal (por ejemplo, otra cantidad),
+hay que corregirlo en Odoo. El cobro equivocado **sigue apareciendo** en "Cobros en tianguis", así
+que al hacer el corte tómenlo en cuenta.
