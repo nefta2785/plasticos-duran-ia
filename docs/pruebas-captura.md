@@ -271,3 +271,39 @@ revisa a mano:
 5. En la computadora, la misma lista, y que al volver a abrir el menú aparezcan los pedidos
    nuevos que envió la mamá.
 
+## 9. Verificar una pantalla del backend en 8071 con una sesión temporal (SOLO PARA DESARROLLO)
+
+> **Solo duranDEV.** Este procedimiento **nunca** se usa en duranPROD ni en el servidor de
+> Oracle. Crea una sesión del administrador sin contraseña: en producción sería un riesgo.
+
+Sirve para que, después de actualizar un módulo y reiniciar Odoo (sección 1), se pueda abrir una
+pantalla del backend en `http://localhost:8071` con el Chrome de la Mac, sin escribir ni leer
+ninguna contraseña.
+
+1. **Crear la sesión** con `odoo shell` (no escribe en la base; solo crea un archivo de sesión
+   de Odoo, igual que el login en `odoo/http.py`, `Session.finalize`):
+
+   ```python
+   from odoo import http
+   assert env.cr.dbname == "duranDEV"
+   store = http.root.session_store
+   admin = env.ref("base.user_admin")
+   sesion = store.new()
+   sesion.update(http.get_default_session(), db=env.cr.dbname)
+   sesion.update({"login": admin.login, "uid": admin.id, "context": dict(admin.context_get()),
+                  "session_token": admin._compute_session_token(sesion.sid)})
+   store.save(sesion)
+   ```
+
+   El identificador (`sesion.sid`) funciona como una contraseña mientras exista: guardarlo en un
+   archivo temporal fuera del repositorio, **sin mostrarlo** ni subirlo a git.
+2. **Abrir la pantalla** con Chrome sin ventana, controlado por DevTools: poner la cookie
+   `session_id` con ese identificador y ajustar el tamaño con `Emulation.setDeviceMetricsOverride`
+   (1366 x 768 para computadora y 393 x 852 para celular; así sí se dibuja a 393 px). Revisar que
+   no haya errores de consola ni ventana de error, que se vean las filas y que ni la página ni la
+   lista se deslicen a los lados.
+3. **Borrar la sesión** al terminar, en `odoo shell`:
+   `store.delete(store.get(sid))`, y comprobar que el archivo de
+   `store.get_session_filename(sid)` ya no existe y que la misma cookie manda al login. Borrar
+   también el archivo temporal con el identificador.
+
