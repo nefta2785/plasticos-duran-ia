@@ -14,8 +14,9 @@ RUTA_CONFIRMAR = "/captura/api/cobro/confirmar"
 AVISO_BORRADOR = "Este cliente tiene una factura en borrador; publícala o cancélala en Odoo."
 
 
-@tagged("post_install", "-at_install")
-class TestCobroConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
+class CobroDatosPrueba(CapturaDatosPrueba, CapturaHttpMixin):
+    """ Datos y ayudantes de las pruebas de la confirmación del cobro
+    (mezclar con HttpCase). """
 
     @classmethod
     def setUpClass(cls):
@@ -84,14 +85,17 @@ class TestCobroConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
             "cliente_id": (cliente or self.cliente).id, "zona_id": self.zona_con_clientes.id,
         })
 
-    def _params(self, cliente=None, token=None, visto=None, tipo="nada"):
-        return {
+    def _params(self, cliente=None, token=None, visto=None, tipo="nada", monto=None):
+        params = {
             "cliente_id": (cliente or self.cliente).id,
             "zona_id": self.zona_con_clientes.id,
             "tipo": tipo,
             "visto": self._detalle(cliente)["visto"] if visto is None else visto,
             "token": token or uuid.uuid4().hex,
         }
+        if monto is not None:
+            params["monto"] = monto
+        return params
 
     def _confirmar(self, **kwargs):
         resultado = self._resultado(RUTA_CONFIRMAR, self._params(**kwargs))
@@ -122,7 +126,12 @@ class TestCobroConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
             "conciliaciones": self.env["account.partial.reconcile"].search_count([]),
             "facturado": lineas.mapped("qty_invoiced"),
             "cobros": self.env["duran.captura.cobro"].search_count([]),
+            "pagos": self.env["account.payment"].search_count([("partner_id", "child_of", cliente.id)]),
         }
+
+
+@tagged("post_install", "-at_install")
+class TestCobroConfirmar(CobroDatosPrueba, HttpCase):
 
     # === Facturar y publicar === #
 
@@ -477,12 +486,12 @@ class TestCobroConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual(self._error(self._params())["message"], "Este cliente no tiene nada que cobrar.")
         self.assertEqual(self._foto(), antes)
 
-    def test_por_ahora_solo_no_pago_hoy(self):
+    def test_tipo_de_pago_invalido(self):
         self._entregada(self.cliente, [(self.pieza, 1)])
         antes = self._foto()
-        for tipo in ("todo", "parte", "fiado"):
+        for tipo in ("fiado", "", None, 1):
             with self.subTest(tipo=tipo):
-                self.assertIn("No pagó hoy", self._error(self._params(tipo=tipo))["message"])
+                self.assertIn("datos inválidos", self._error(self._params(tipo=tipo))["message"])
         self.assertEqual(self._foto(), antes)
 
     def test_datos_invalidos(self):

@@ -6,7 +6,7 @@ from markupsafe import Markup
 
 from odoo import Command, _, api, fields, models
 from odoo.exceptions import LockError, UserError
-from odoo.tools import float_round, format_amount
+from odoo.tools import float_is_zero, float_round, format_amount
 
 # "Lo de siempre": órdenes confirmadas de los últimos DIAS_HABITUALES días,
 # como máximo MAX_HABITUALES productos.
@@ -952,14 +952,19 @@ class DuranCaptura(models.AbstractModel):
         }
 
     @api.model
-    def confirmar_cobro(self, cliente_id, zona_id, tipo, visto, token):
+    def confirmar_cobro(self, cliente_id, zona_id, tipo, visto, token, monto=None):
         """ Confirma el cobro al cliente en una sola transacción: factura lo
         entregado sin facturar, publica las facturas, le aplica su saldo a
-        favor a sus facturas abiertas y registra la bitácora. Si algo falla,
-        no queda nada.
+        favor a sus facturas abiertas, registra UN pago en efectivo por lo que
+        pagó (aplicado a sus facturas abiertas en el orden de Odoo: la más
+        antigua primero) y registra la bitácora. Si algo falla, no queda nada.
 
-        :param tipo: cómo pagó. Por ahora solo "nada" ("No pagó hoy": las
-            facturas quedan publicadas y sin pago).
+        :param tipo: cómo pagó: "todo" (el total a cobrar), "parte" (`monto`)
+            o "nada" ("No pagó hoy": las facturas quedan publicadas y sin
+            pago).
+        :param monto: solo con "parte": el efectivo recibido, mayor a 0, con
+            máximo 2 decimales y sin pasar del total a cobrar. Lo que falte
+            queda pendiente en las facturas.
         :param visto: el `visto` de `get_cobro`, tal cual. Se bloquean las
             órdenes y facturas del cliente y se vuelve a calcular el cobro; si
             algo cambió desde que se mostró (alguien facturó, cobró o dejó una
@@ -973,16 +978,17 @@ class DuranCaptura(models.AbstractModel):
         las órdenes y facturas pueden ser de otro vendedor. Con sudo SOLO se
         facturan las órdenes del cliente con lo entregado sin facturar
         (`_create_invoices`; sin sudo Odoo devolvería una factura vacía), se
-        publican esas facturas y se concilia el saldo a favor del cliente con
-        sus facturas abiertas. Todo sale de lo que calcula el servidor para
-        este cliente, nunca de ids que mande la pantalla. sudo conserva al
-        usuario: "Creado por" y el autor en el historial son quien cobra. """
+        publican esas facturas, se concilia el saldo a favor del cliente con
+        sus facturas abiertas y se registra el pago en el diario de efectivo
+        contra sus facturas abiertas (y se le pone de referencia el número del
+        cobro). Todo sale de lo que calcula el servidor para este cliente,
+        nunca de ids que mande la pantalla. sudo conserva al usuario: "Creado
+        por" y el autor en el historial son quien cobra. """
         token = self._validar_token(token, _("el cobro"))
         ya_registrado = self.env["duran.captura.cobro"].search([("token", "=", token)], limit=1)
         if ya_registrado:
             return self._resultado_cobro(ya_registrado, ya_existia=True)
-        if tipo != "nada":
-            raise UserError(_("Por ahora solo se puede registrar «No pagó hoy»."))
+        monto = self._validar_monto(tipo, monto)
         visto = self._normalizar_visto(visto)
         zona = self._zona(zona_id)
         cliente = self._cliente_en_zona(cliente_id, zona)
@@ -997,17 +1003,28 @@ class DuranCaptura(models.AbstractModel):
             raise UserError(_("Este cliente no tiene nada que cobrar."))
 
         currency = self.env.company.currency_id
+        if tipo == "todo":
+            monto = cobro["total_a_cobrar"]
+        elif currency.compare_amounts(monto, cobro["total_a_cobrar"]) > 0:
+            raise UserError(_(
+                "El efectivo recibido (%(monto)s) es más que el total a cobrar (%(total)s). "
+                "No se registró nada.",
+                monto=self._formato_precio(monto, currency, centavos=True), total=cobro["total_a_cobrar_texto"],
+            ))
+        diario = self._diario_efectivo() if currency.compare_amounts(monto, 0.0) > 0 else None
+
         facturas = self._facturar_cobro(cliente, cobro)
-        documentos = self._aplicar_saldo_a_favor(cliente, facturas)
+        documentos, pago = self._aplicar_cobro(cliente, facturas, monto, diario)
         saldo_pendiente = currency.round(sum(
             documento["despues"] for documento in documentos if documento["tipo"] != "credito"
         ))
-        if currency.compare_amounts(saldo_pendiente, cobro["total_a_cobrar"]) != 0:
+        esperado = currency.round(cobro["total_a_cobrar"] - monto)
+        if currency.compare_amounts(saldo_pendiente, esperado) != 0:
             raise UserError(_(
-                "El saldo que quedaría (%(saldo)s) no coincide con el total mostrado (%(total)s). "
+                "El saldo que quedaría (%(saldo)s) no es el esperado (%(esperado)s). "
                 "No se registró nada: regresa y vuelve a abrir al cliente.",
                 saldo=self._formato_precio(saldo_pendiente, currency, centavos=True),
-                total=cobro["total_a_cobrar_texto"],
+                esperado=self._formato_precio(esperado, currency, centavos=True),
             ))
         registro = self.env["duran.captura.cobro"].create({
             "token": token,
@@ -1018,8 +1035,9 @@ class DuranCaptura(models.AbstractModel):
             "saldo_anterior": cobro["total_saldo_anterior"],
             "creditos": cobro["total_creditos"],
             "total_a_cobrar": cobro["total_a_cobrar"],
-            "monto_recibido": 0.0,
+            "monto_recibido": monto,
             "saldo_pendiente": saldo_pendiente,
+            "payment_id": pago.id,
             "linea_ids": [
                 Command.create({
                     "move_id": documento["move"].id,
@@ -1031,7 +1049,43 @@ class DuranCaptura(models.AbstractModel):
                 for documento in documentos
             ],
         })
+        if pago:
+            # Referencia del pago: el número del cobro (que apenas existe).
+            pago.memo = _("Cobro en tianguis #%(numero)s", numero=registro.id)
         return self._resultado_cobro(registro, ya_existia=False)
+
+    @api.model
+    def _validar_monto(self, tipo, monto):
+        """ Revisa el tipo de pago y el monto que manda la pantalla (sin
+        compararlo aún con el total). "nada": 0; "todo": None (será el total a
+        cobrar); "parte": el monto, mayor a 0 y con máximo 2 decimales. """
+        if tipo == "nada":
+            return 0.0
+        if tipo == "todo":
+            return None
+        if tipo != "parte":
+            raise UserError(_("El cobro trae datos inválidos. Recarga la página."))
+        if isinstance(monto, bool) or not isinstance(monto, (int, float)) or monto <= 0:
+            raise UserError(_("Escribe cuánto pagó: un importe mayor a $0."))
+        if not float_is_zero(monto - float_round(monto, precision_digits=2), precision_digits=6):
+            raise UserError(_("El importe lleva máximo 2 decimales (centavos)."))
+        return float(monto)
+
+    @api.model
+    def _diario_efectivo(self):
+        """ El diario donde se registra el efectivo cobrado: debe haber
+        exactamente uno de tipo Efectivo en la compañía. """
+        diarios = self.env["account.journal"].search([
+            ("type", "=", "cash"), ("company_id", "=", self.env.company.id),
+        ])
+        if len(diarios) != 1:
+            raise UserError(_(
+                "Para registrar el efectivo debe haber exactamente un diario de tipo Efectivo, y hay "
+                "%(cuantos)s. Pide que lo revisen en Facturación › Configuración › Diarios. No se "
+                "registró nada.",
+                cuantos=len(diarios),
+            ))
+        return diarios
 
     @api.model
     def _normalizar_visto(self, visto):
@@ -1104,12 +1158,14 @@ class DuranCaptura(models.AbstractModel):
         return facturas
 
     @api.model
-    def _aplicar_saldo_a_favor(self, cliente, facturas):
+    def _aplicar_cobro(self, cliente, facturas, monto, diario):
         """ Aplica (con sudo, ver `confirmar_cobro`) el saldo a favor del
-        cliente a sus facturas abiertas, incluidas las recién creadas, en el
-        orden de Odoo (la más antigua primero). Devuelve cada documento con su
-        saldo antes y después, en positivo: facturas nuevas, facturas
-        anteriores y saldos a favor. """
+        cliente a sus facturas abiertas, incluidas las recién creadas, y
+        después registra el pago de `monto` en `diario`, ambos en el orden de
+        Odoo (la más antigua primero). Devuelve (documentos, pago): cada
+        documento con su saldo antes y después, en positivo (facturas nuevas,
+        facturas anteriores y saldos a favor), y el pago (vacío si `monto` es
+        0). """
         apuntes = self._saldos_abiertos(cliente)
         creditos = apuntes.filtered(lambda a: a.amount_residual < 0)
         cargos = apuntes - creditos
@@ -1124,6 +1180,10 @@ class DuranCaptura(models.AbstractModel):
         if creditos and cargos:
             for cuenta in creditos.account_id:
                 (creditos | cargos).filtered(lambda a: a.account_id == cuenta).reconcile()
+            apuntes.invalidate_recordset(["amount_residual"])
+        pago = self.env["account.payment"]
+        if diario:
+            pago = self._registrar_pago(cliente, monto, diario)
             apuntes.invalidate_recordset(["amount_residual"])
         despues = saldos()
 
@@ -1144,7 +1204,38 @@ class DuranCaptura(models.AbstractModel):
                 "despues": currency.round(abs(despues[documento])),
             })
         orden_tipo = {"nueva": 0, "anterior": 1, "credito": 2}
-        return sorted(documentos, key=lambda documento: orden_tipo[documento["tipo"]])
+        return sorted(documentos, key=lambda documento: orden_tipo[documento["tipo"]]), pago
+
+    @api.model
+    def _registrar_pago(self, cliente, monto, diario):
+        """ UN pago en efectivo de `monto`, hoy, en `diario`, aplicado a las
+        facturas abiertas del cliente, como el asistente "Registrar pago" de
+        Odoo con "Agrupar pagos" y la diferencia abierta (queda pendiente en
+        las facturas, sin ajuste). Con sudo (ver `confirmar_cobro`), solo
+        sobre sus apuntes por cobrar. """
+        cargos = self._saldos_abiertos(cliente).filtered(lambda a: a.amount_residual > 0)
+        asistente = self.env["account.payment.register"].sudo().with_context(
+            active_model="account.move.line", active_ids=cargos.ids,
+        ).create({
+            "journal_id": diario.id,
+            "payment_date": fields.Date.context_today(self),
+            "amount": monto,
+            "group_payment": True,
+            "payment_difference_handling": "open",
+            "communication": _("Cobro en tianguis"),
+        })
+        currency = self.env.company.currency_id
+        if len(asistente.batches) != 1 or not asistente.can_edit_wizard:
+            raise UserError(_("No se pudo registrar el pago en un solo movimiento. No se registró nada."))
+        # El asistente devuelve el pago sin sudo; solo este pago sigue con sudo
+        # (para leerlo y ponerle la referencia en `confirmar_cobro`).
+        pago = asistente._create_payments().sudo()
+        if (
+            len(pago) != 1 or pago.journal_id != diario
+            or currency.compare_amounts(pago.amount, monto) != 0
+        ):
+            raise UserError(_("El pago no quedó como se esperaba. No se registró nada."))
+        return pago
 
     @api.model
     def _resultado_cobro(self, registro, ya_existia):
@@ -1158,6 +1249,7 @@ class DuranCaptura(models.AbstractModel):
             "total_a_cobrar": registro.total_a_cobrar,
             "total_a_cobrar_texto": self._formato_precio(registro.total_a_cobrar, currency, centavos=True),
             "monto_recibido": registro.monto_recibido,
+            "monto_recibido_texto": self._formato_precio(registro.monto_recibido, currency, centavos=True),
             "saldo_pendiente": registro.saldo_pendiente,
             "saldo_pendiente_texto": self._formato_precio(registro.saldo_pendiente, currency, centavos=True),
             # Folios con sudo: solo las facturas de este cobro (pueden ser de otro vendedor).
