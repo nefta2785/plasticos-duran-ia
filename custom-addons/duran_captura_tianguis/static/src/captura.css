@@ -14,6 +14,12 @@
     --peligro-texto: #ffffff;
     --exito: #0a6b2c;
     --separador: #c9c9c9;
+    /* Color de cada operación (barra superior y su botón en Inicio). Todos con
+       contraste de 6:1 o más contra el texto blanco. */
+    --color-pedido: #0b3d91;
+    --color-entrega: #0a6b2c;
+    --color-cobro: #a14a00;
+    --color-acomodo: #7a1f6b;
     --alto-boton: 64px;
     --radio: 12px;
 }
@@ -46,19 +52,35 @@ button {
 
 /* === Barra superior === */
 
-/* Dos filas: arriba los botones (siempre en el mismo lugar), abajo el título
-   a todo lo ancho para que quepan los nombres largos. */
+/* El color de la operación lo da `data-operacion` (en <body> para la barra y
+   en cada botón de Inicio). Sin operación (Inicio), el azul de siempre. */
+[data-operacion="pedido"] { --color-operacion: var(--color-pedido); }
+[data-operacion="entrega"] { --color-operacion: var(--color-entrega); }
+[data-operacion="cobro"] { --color-operacion: var(--color-cobro); }
+[data-operacion="acomodo"] { --color-operacion: var(--color-acomodo); }
+
+/* Arriba los botones (siempre en el mismo lugar), luego la operación y abajo
+   el título a todo lo ancho para que quepan los nombres largos. Espacios
+   compactos: la línea de la operación agrega solo ~20px. */
 .barra {
     position: sticky;
     top: 0;
     z-index: 10;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 8px 16px;
-    padding-top: calc(8px + env(safe-area-inset-top));
-    background: var(--primario);
+    gap: 4px;
+    padding: 6px 16px;
+    padding-top: calc(6px + env(safe-area-inset-top));
+    background: var(--color-operacion, var(--primario));
     color: var(--primario-texto);
+}
+
+.operacion {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
 }
 
 .barra-botones {
@@ -229,6 +251,13 @@ button {
     gap: 16px;
     min-height: 96px;
 }
+/* Cada operación con el color y el ícono de su barra, con letra blanca. */
+.btn-modo[data-operacion] {
+    border-color: var(--color-operacion);
+    background: var(--color-operacion);
+    color: var(--primario-texto);
+}
+.btn-modo[data-operacion]:active { background: var(--color-operacion); filter: brightness(0.8); }
 .btn-modo:disabled {
     border-style: dashed;
     color: var(--texto-suave);

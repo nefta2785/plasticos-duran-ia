@@ -57,6 +57,10 @@ desde cualquier pantalla. Si hay un pedido sin enviar, la app pregunta antes de 
 pesos de una entrega y lo escrito en un cobro siguen ahí al volver al cliente, mientras no
 cierren ni recarguen la página.
 
+**Cada operación tiene su nombre y su color arriba**, en todas sus pantallas: **Pedido** azul,
+**Entrega** verde, **Cobro** naranja y **Acomodo** morado. Los botones de la pantalla de inicio
+tienen los mismos colores.
+
 **Al levantar un pedido, para agregar más de uno toquen "+"; para quitar, toquen "−".** Con 1,
 el "−" quita el producto del pedido. Tocar el nombre del producto no hace nada.
 

@@ -37,7 +37,9 @@ class TestPaginaYRutas(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._entrar(self.usuario_captura)
         response = self.url_open("/captura")
         self.assertEqual(response.status_code, 200)
-        for contenedor in ('id="contenido"', 'id="btn-regresar"', 'id="btn-inicio"', 'id="barra-pedido"', 'id="btn-pedido"'):
+        for contenedor in (
+            'id="contenido"', 'id="btn-regresar"', 'id="btn-inicio"', 'id="operacion"', 'id="barra-pedido"', 'id="btn-pedido"',
+        ):
             self.assertIn(contenedor, response.text)
 
     def test_pagina_carga_js_y_css(self):

@@ -24,6 +24,8 @@
         botonesBarra: $("barra-botones"),
         regresar: $("btn-regresar"),
         inicio: $("btn-inicio"),
+        operacion: $("operacion"),
+        colorNavegador: document.querySelector('meta[name="theme-color"]'),
         titulo: $("titulo"),
         subtitulo: $("subtitulo"),
         categorias: $("categorias"),
@@ -60,6 +62,14 @@
         nivel: 0, // entradas del historial desde el Inicio con que abrió la app
     };
     // Pantallas donde hay un pedido en curso (salir de ellas lo vacía).
+    // Cada operación con su nombre e ícono (barra superior y botón de Inicio);
+    // su color está en captura.css (--color-pedido, …).
+    const OPERACIONES = {
+        pedido: { nombre: "PEDIDO", icono: "📝", boton: "Pedido", detalle: "Levantar un pedido nuevo" },
+        entrega: { nombre: "ENTREGA", icono: "🚚", boton: "Entrega", detalle: "Entregar lo que ya pidieron" },
+        cobro: { nombre: "COBRO", icono: "💵", boton: "Cobro", detalle: "Cobrar lo entregado y lo pendiente" },
+        acomodo: { nombre: "ACOMODO", icono: "🛒", boton: "Acomodo de entregas", detalle: "En qué orden acomodar el carrito" },
+    };
     const PANTALLAS_PEDIDO = ["productos", "resumen"];
     const PANTALLAS_ENTREGA = ["entrega", "entrega-resumen"];
     const PESTANA_HABITUALES = "habituales";
@@ -384,8 +394,49 @@
         ui.inicio.disabled = inicioBloqueado();
     }
 
+    function operacionActual() {
+        // Zonas y clientes son de la operación elegida en Inicio (`modo`); las
+        // demás pantallas son de una sola. "El cliente quiere algo más" abre
+        // Productos: es PEDIDO, y al regresar vuelve a ENTREGA.
+        const pantalla = estado.pantalla;
+        if (pantalla === "inicio") {
+            return null;
+        }
+        if (["productos", "resumen", "enviado"].includes(pantalla)) {
+            return "pedido";
+        }
+        if (["entrega", "entrega-resumen", "entregado"].includes(pantalla)) {
+            return "entrega";
+        }
+        if (["cobro", "cobro-confirmar", "cobrado"].includes(pantalla)) {
+            return "cobro";
+        }
+        if (pantalla === "acomodo") {
+            return "acomodo";
+        }
+        return estado.modo; // zonas y clientes
+    }
+
+    function ponerOperacion() {
+        const operacion = operacionActual();
+        if (operacion) {
+            document.body.dataset.operacion = operacion;
+            const { icono, nombre } = OPERACIONES[operacion];
+            ui.operacion.replaceChildren(el("span", { "aria-hidden": "true", text: icono }), ` ${nombre}`);
+        } else {
+            delete document.body.dataset.operacion;
+            ui.operacion.replaceChildren();
+        }
+        ui.operacion.hidden = !operacion;
+        // La barra del navegador (Android) con el mismo color que la barra.
+        if (ui.colorNavegador) {
+            ui.colorNavegador.content = getComputedStyle(ui.barra).backgroundColor;
+        }
+    }
+
     function dibujar() {
         const enInicio = estado.pantalla === "inicio";
+        ponerOperacion();
         ui.regresar.textContent = enInicio ? "‹ Salir" : "‹ Regresar";
         ui.regresar.hidden = enInicio && !puedeSalir;
         ui.inicio.hidden = enInicio;
@@ -426,10 +477,18 @@
 
     // === Pantalla: Inicio ===
 
-    function botonModo(icono, nombre, detalle, alTocar) {
+    function botonModo(operacion, alTocar) {
+        // Mismo color, ícono y nombre que la barra de la operación.
+        const { icono, boton: nombre, detalle } = OPERACIONES[operacion];
         return el(
             "button",
-            { type: "button", class: "btn btn-modo", disabled: alTocar ? null : "disabled", onclick: alTocar },
+            {
+                type: "button",
+                class: "btn btn-modo",
+                "data-operacion": operacion,
+                disabled: alTocar ? null : "disabled",
+                onclick: alTocar,
+            },
             el("span", { class: "modo-icono", "aria-hidden": "true", text: icono }),
             el(
                 "span",
@@ -446,18 +505,10 @@
         mostrar(
             el("p", { class: "pregunta", text: "¿Qué vas a hacer?" }),
             lista([
-                botonModo("📝", "Pedido", "Levantar un pedido nuevo", () =>
-                    irA("zonas", { modo: "pedido", zona: null, cliente: null })
-                ),
-                botonModo("🚚", "Entrega", "Entregar lo que ya pidieron", () =>
-                    irA("zonas", { modo: "entrega", zona: null, cliente: null })
-                ),
-                botonModo("💵", "Cobro", "Cobrar lo entregado y lo pendiente", () =>
-                    irA("zonas", { modo: "cobro", zona: null, cliente: null })
-                ),
-                botonModo("🛒", "Acomodo de entregas", "En qué orden acomodar el carrito", () =>
-                    irA("acomodo", { modo: null, zona: null, cliente: null })
-                ),
+                botonModo("pedido", () => irA("zonas", { modo: "pedido", zona: null, cliente: null })),
+                botonModo("entrega", () => irA("zonas", { modo: "entrega", zona: null, cliente: null })),
+                botonModo("cobro", () => irA("zonas", { modo: "cobro", zona: null, cliente: null })),
+                botonModo("acomodo", () => irA("acomodo", { modo: null, zona: null, cliente: null })),
             ])
         );
     }
@@ -502,7 +553,7 @@
     // === Pantalla: Clientes ===
 
     async function dibujarClientes() {
-        ponerTitulo(estado.zona.nombre, "Zona");
+        ponerTitulo(estado.zona.nombre);
         const vista = nuevaVista();
         mostrar(aviso("Cargando clientes…"));
         const entrega = estado.modo === "entrega";
@@ -545,7 +596,14 @@
             return;
         }
         mostrar(
-            el("p", { class: "pregunta", text: "¿Qué cliente?" }),
+            el("p", {
+                class: "pregunta",
+                text: entrega
+                    ? "¿A quién le vas a entregar?"
+                    : cobrando
+                      ? "¿A quién le vas a cobrar?"
+                      : "¿A quién le levantas el pedido?",
+            }),
             lista(
                 clientes.map((cliente) =>
                     el("button", {

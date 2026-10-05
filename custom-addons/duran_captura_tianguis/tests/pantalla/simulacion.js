@@ -548,6 +548,43 @@ function checkInicio(pantalla) {
     );
 }
 
+// Colores de las operaciones (captura.css) y el azul de la barra sin operación.
+const COLOR_OPERACION = {
+    pedido: "rgb(11, 61, 145)", entrega: "rgb(10, 107, 44)", cobro: "rgb(161, 74, 0)", acomodo: "rgb(122, 31, 107)",
+};
+const AZUL_INICIO = "rgb(11, 61, 145)";
+const TEXTO_OPERACION = { pedido: "📝 PEDIDO", entrega: "🚚 ENTREGA", cobro: "💵 COBRO", acomodo: "🛒 ACOMODO" };
+
+function checkOperacion(operacion, pantalla) {
+    // La línea de la operación (o ninguna en Inicio), el color de la barra y
+    // el de la barra del navegador.
+    const linea = q("#operacion");
+    const barra = getComputedStyle(q(".barra")).backgroundColor;
+    const navegador = q('meta[name="theme-color"]').content;
+    if (!operacion) {
+        check(
+            `Sin operación, barra azul: ${pantalla}`,
+            [linea.hidden, document.body.dataset.operacion ?? null, barra, navegador],
+            [true, null, AZUL_INICIO, AZUL_INICIO]
+        );
+        return;
+    }
+    const r = linea.getBoundingClientRect();
+    const estilo = getComputedStyle(linea);
+    check(
+        `Operación ${TEXTO_OPERACION[operacion]} con su color: ${pantalla}`,
+        [
+            linea.hidden,
+            linea.textContent,
+            barra,
+            navegador,
+            [estilo.fontSize, estilo.fontWeight, estilo.color],
+            r.top >= q("#barra-botones").getBoundingClientRect().bottom && r.bottom <= q("#titulo").getBoundingClientRect().top,
+        ],
+        [false, TEXTO_OPERACION[operacion], COLOR_OPERACION[operacion], COLOR_OPERACION[operacion], ["18px", "800", "rgb(255, 255, 255)"], true]
+    );
+}
+
 function inicioGris() {
     // Deshabilitado y pintado de gris (rojo = verde = azul).
     const inicio = q("#btn-inicio");

@@ -6,6 +6,7 @@ async function pasoInicio() {
     check("Inicio: título", txt("#titulo"), "Captura");
     check("Inicio (administrador): botón superior dice Salir y se ve", [txt("#btn-regresar"), q("#btn-regresar").hidden], ["‹ Salir", false]);
     check("Inicio: sin INICIO (ya está en el Inicio), la fila de Salir sí se ve", [q("#btn-inicio").hidden, q("#barra-botones").hidden], [true, false]);
+    checkOperacion(null, "Inicio (administrador)");
     check("Inicio: pregunta", txt(".pregunta"), "¿Qué vas a hacer?");
     check(
         "Inicio: cuatro modos, Pedido, Entrega, Cobro y Acomodo de entregas",
@@ -18,6 +19,21 @@ async function pasoInicio() {
         ]
     );
     checkCuatroModosSinDeslizar("Inicio (administrador)");
+    check(
+        "Inicio: cada botón con el color, ícono y nombre de su operación, letra blanca",
+        qa(".btn-modo").map((b) => [
+            b.querySelector(".modo-icono").textContent,
+            b.querySelector(".modo-nombre").textContent,
+            getComputedStyle(b).backgroundColor,
+            getComputedStyle(b).color,
+        ]),
+        [
+            ["📝", "Pedido", COLOR_OPERACION.pedido, "rgb(255, 255, 255)"],
+            ["🚚", "Entrega", COLOR_OPERACION.entrega, "rgb(255, 255, 255)"],
+            ["💵", "Cobro", COLOR_OPERACION.cobro, "rgb(255, 255, 255)"],
+            ["🛒", "Acomodo de entregas", COLOR_OPERACION.acomodo, "rgb(255, 255, 255)"],
+        ]
+    );
     check("Inicio: sin barra de pedido ni pestañas", [q("#barra-pedido").hidden, q("#categorias").hidden], [true, true]);
     check(
         "Inicio: los cuatro modos habilitados",
@@ -42,10 +58,12 @@ async function pasoZonas() {
     check("Zonas: un botón por zona", qa(".lista .btn").map((b) => b.textContent), ["Bosques", "Guadalupana"]);
     check("Zonas: sin barra de pedido", q("#barra-pedido").hidden, true);
     checkInicio("Zonas");
+    checkOperacion("pedido", "Zonas de Pedido");
 
     boton("Guadalupana").click();
     await espera(80);
     check("Zona vacía: mensaje", txt(".aviso"), "Esta zona no tiene clientes");
+    checkOperacion("pedido", "zona vacía de Pedido");
     check("Zona vacía: botón para regresar", !!boton("‹ Regresar a zonas"), true);
     boton("‹ Regresar a zonas").click();
     await espera(120);
@@ -56,6 +74,8 @@ async function pasoClientes() {
     boton("Bosques").click();
     await espera(80);
     check("Clientes: título es la zona", txt("#titulo"), "Bosques");
+    check("Clientes: sin el subtítulo «Zona»", q("#subtitulo").hidden, true);
+    check("Clientes de Pedido: la pregunta dice la operación", txt(".pregunta"), "¿A quién le levantas el pedido?");
     check("Clientes: botón superior dice Regresar", txt("#btn-regresar"), "‹ Regresar");
     check(
         "Clientes: un nombre con HTML se muestra como texto",
@@ -64,6 +84,7 @@ async function pasoClientes() {
     );
     check("Clientes: no se crea ningún <b> desde los datos", qa(".lista b").length, 0);
     checkInicio("Clientes");
+    checkOperacion("pedido", "Clientes de Pedido");
 }
 
 async function pasoProductos() {
@@ -72,6 +93,7 @@ async function pasoProductos() {
     check("Productos: título es el cliente, subtítulo la zona", [txt("#titulo"), txt("#subtitulo")], ["Doña Carmen", "Bosques"]);
     check("Productos: pestañas de categoría", nombresPestanas(), ["Bolsas asa", "Rollos"]);
     checkInicio("Productos");
+    checkOperacion("pedido", "Productos");
     check("Productos: primera categoría activa", txt('.categoria[aria-selected="true"]'), "Bolsas asa");
     check(
         "Productos: nombre y precio",
@@ -272,6 +294,7 @@ async function pasoResumen() {
     check("Resumen: título y subtítulo", [txt("#titulo"), txt("#subtitulo")], ["Doña Carmen", "Bosques"]);
     check("Resumen: sin pestañas", q("#categorias").hidden, true);
     checkInicio("Resumen");
+    checkOperacion("pedido", "Resumen");
     check(
         "Resumen: productos en orden de catálogo, con cantidad y unidad",
         qa(".resumen-linea").map((l) => [l.querySelector(".resumen-nombre").textContent, l.querySelector(".resumen-cantidad").textContent]),
@@ -335,6 +358,7 @@ async function pasoEnviar() {
     );
     check("Enviado: sin barra del pedido", q("#barra-pedido").hidden, true);
     checkInicio("Pedido enviado");
+    checkOperacion("pedido", "Pedido enviado");
     check(
         "Enviado: botones siguiente cliente y cambiar de zona",
         qa(".lista .btn").map((b) => b.textContent),
@@ -473,9 +497,11 @@ async function pasoEntregaClientes() {
     modo("Entrega").click();
     await espera(80);
     check("Entrega: Zonas con subtítulo Entrega", [txt("#titulo"), txt("#subtitulo")], ["Zonas", "Entrega"]);
+    checkOperacion("entrega", "Zonas de Entrega");
     boton("Guadalupana").click();
     await espera(80);
     check("Entrega: zona sin pendientes", txt(".aviso"), "Nadie de esta zona tiene entregas pendientes");
+    checkOperacion("entrega", "zona sin entregas pendientes");
     await regresar();
     boton("Bosques").click();
     await espera(80);
@@ -491,6 +517,7 @@ async function pasoEntregaClientes() {
 async function pasoEntregaLista() {
     check("Lista: título cliente y zona", [txt("#titulo"), txt("#subtitulo")], ["Doña Carmen", "Bosques"]);
     checkInicio("Entrega: lo pendiente");
+    checkOperacion("entrega", "Entrega: lo pendiente");
     check(
         "Lista: agrupada por producto con su precio",
         qa(".entrega-encabezado").map((e) => [e.querySelector(".producto-nombre").textContent, e.querySelector(".producto-precio").textContent]),
@@ -603,6 +630,7 @@ async function pasoEntregaResumen() {
     await espera(150);
     check("Resumen: título", [txt("#titulo"), txt(".pregunta")], ["Doña Carmen", "Revisa la entrega"]);
     checkInicio("Entrega: resumen");
+    checkOperacion("entrega", "Entrega: resumen");
     check(
         "Resumen: cada línea con su importe",
         qa(".resumen-entrega").map((l) => [l.querySelector(".resumen-detalle").textContent, l.querySelector(".resumen-importe").textContent]),
@@ -684,10 +712,13 @@ async function pasoEntregaConfirmar() {
     check("Éxito: botones", qa(".lista .btn").map((b) => b.textContent), ["Siguiente cliente de Bosques", "Cambiar de zona"]);
     check("Éxito: sin barra", q("#barra-pedido").hidden, true);
     checkInicio("Entrega confirmada");
+    checkOperacion("entrega", "Entrega confirmada");
     check("Entrega confirmada: recargar ya no pregunta", pideConfirmarAlSalir(), false);
     boton("Siguiente cliente de Bosques").click();
     await espera(120);
-    check("Siguiente cliente: clientes con pendientes de la zona", [txt("#titulo"), txt("#subtitulo")], ["Bosques", "Zona"]);
+    check("Siguiente cliente: clientes con pendientes de la zona, sin subtítulo", [txt("#titulo"), q("#subtitulo").hidden], ["Bosques", true]);
+    checkOperacion("entrega", "Clientes de Entrega");
+    check("Clientes de Entrega: la pregunta dice la operación", txt(".pregunta"), "¿A quién le vas a entregar?");
 }
 
 async function pasoEntregaAlgoMasYNada() {
@@ -702,6 +733,7 @@ async function pasoEntregaAlgoMasYNada() {
         [txt("#titulo"), q("#categorias").hidden, nombresPestanas()[0]],
         ["Cliente con historial", false, "⭐ Lo de siempre"]
     );
+    checkOperacion("pedido", "«El cliente quiere algo más» (Productos desde Entrega)");
     check("Solo «No se lo llevó» también cuenta como capturado", pideConfirmarAlSalir(), true);
     await tocarProducto(440, 1);
     q("#btn-inicio").click();
@@ -721,6 +753,7 @@ async function pasoEntregaAlgoMasYNada() {
         [txt(".pregunta"), botonNoLlevo("m201").getAttribute("aria-pressed")],
         ["¿Qué se lleva?", "true"]
     );
+    checkOperacion("entrega", "de regreso de «algo más»");
 
     // No se lleva nada: no pide peso, y confirmar pide una confirmación extra.
     q("#btn-pedido").click();
@@ -773,9 +806,11 @@ async function pasoCobroClientes() {
     modo("Cobro").click();
     await espera(80);
     check("Cobro: Zonas con subtítulo Cobro", [txt("#titulo"), txt("#subtitulo")], ["Zonas", "Cobro"]);
+    checkOperacion("cobro", "Zonas de Cobro");
     boton("Guadalupana").click();
     await espera(80);
     check("Cobro: zona sin nada por cobrar", txt(".aviso"), "Nadie de esta zona tiene algo por cobrar");
+    checkOperacion("cobro", "zona sin nada por cobrar");
     await regresar();
     boton("Bosques").click();
     await espera(80);
@@ -784,6 +819,8 @@ async function pasoCobroClientes() {
         [qa(".lista .btn").map((b) => b.textContent), llamadasA("cobro/clientes")],
         [["Doña Carmen", "Don Beto", "Mario fruta", "Cliente con historial"], 2]
     );
+    checkOperacion("cobro", "Clientes de Cobro");
+    check("Clientes de Cobro: la pregunta dice la operación, sin subtítulo", [txt(".pregunta"), q("#subtitulo").hidden], ["¿A quién le vas a cobrar?", true]);
 }
 
 async function pasoCobroAvisos() {
@@ -843,6 +880,7 @@ async function pasoCobroDetalle() {
     await espera(120);
     check("Detalle: título cliente y zona", [txt("#titulo"), txt("#subtitulo")], ["Doña Carmen", "Bosques"]);
     checkInicio("Cobro: lo que debe");
+    checkOperacion("cobro", "Cobro: lo que debe");
     check(
         "Detalle: entregado sin facturar con pesos, precios e importes",
         importesCobro(".cobro-entregado"),
@@ -866,6 +904,7 @@ async function pasoCobroParte() {
     check("Una parte: título y campo con teclado decimal", [txt(".pregunta"), q(".monto-campo").getAttribute("inputmode")], ["Pagó una parte", "decimal"]);
     check("Una parte: sin monto, el eco lo pide", txt(".monto-eco"), "Escribe cuánto pagó");
     checkInicio("Cobro: confirmación");
+    checkOperacion("cobro", "Cobro: confirmación");
     check("Una parte vacía: recargar no pregunta", pideConfirmarAlSalir(), false);
     await escribirMonto("100,5");
     check(
@@ -962,6 +1001,7 @@ async function pasoCobroEnviar() {
     check("Éxito: botones", qa(".lista .btn").map((b) => b.textContent), ["Siguiente cliente de Bosques", "Cambiar de zona"]);
     check("Cobro registrado: recargar ya no pregunta", pideConfirmarAlSalir(), false);
     checkInicio("Cobro registrado");
+    checkOperacion("cobro", "Cobro registrado");
     boton("Siguiente cliente de Bosques").click();
     await espera(120);
     // Pedidos: Guadalupana, Bosques, tres «Regresar», la vuelta desde INICIO y este.
@@ -1087,6 +1127,7 @@ async function pasoAcomodo() {
     );
     check("Acomodo: abre directo, pidiendo los datos al servidor", llamadasA("acomodo"), antes + 1);
     checkInicio("Acomodo de entregas");
+    checkOperacion("acomodo", "Acomodo de entregas");
     check(
         "Acomodo: un encabezado grande por zona, en el orden del servidor",
         qa(".acomodo-zona-nombre").map((e) => e.textContent),
@@ -1158,12 +1199,14 @@ async function pasoAcomodo() {
         [txt(".aviso-grande"), parseFloat(getComputedStyle(q(".aviso-grande")).fontSize) >= 24, qa(".acomodo-zona").length],
         ["Hoy no hay pedidos pendientes de entregar.", true, 0]
     );
+    checkOperacion("acomodo", "Acomodo sin pedidos");
     await tocarInicio();
 
     modoAcomodo = "sin-red";
     modo("Acomodo de entregas").click();
     await espera(80);
     check("Acomodo sin señal: mensaje y botón para reintentar", [txt(".aviso"), !!boton("Intentar de nuevo")], ["No hay conexión. Revisa la señal e intenta de nuevo.", true]);
+    checkOperacion("acomodo", "Acomodo con error de conexión");
     boton("Intentar de nuevo").click();
     await espera(80);
     check("Acomodo: Intentar de nuevo carga la lista", qa(".acomodo-zona").length, 3);
@@ -1244,6 +1287,7 @@ async function pasoTarjetasGrandes() {
 async function pasoTianguisSinSalir() {
     await espera(80);
     check("Tianguis: Inicio sin botón Salir", [txt("#titulo"), q("#btn-regresar").hidden, !!boton("‹ Salir")], ["Captura", true, false]);
+    checkOperacion(null, "Inicio de tianguis");
     check("Tianguis: en Inicio la fila de botones no ocupa lugar", [q("#barra-botones").hidden, q("#btn-inicio").hidden], [true, true]);
     checkCuatroModosSinDeslizar("Inicio de tianguis");
     checkAncho("Inicio de tianguis");
@@ -1260,6 +1304,7 @@ async function pasoTianguisSinSalir() {
         [txt("#titulo"), location.pathname.endsWith("tianguis.html"), q("#barra-botones").hidden],
         ["Captura", true, true]
     );
+    checkOperacion(null, "Inicio de tianguis, de regreso con INICIO");
     modo("Pedido").click();
     await espera(80);
     await regresar();

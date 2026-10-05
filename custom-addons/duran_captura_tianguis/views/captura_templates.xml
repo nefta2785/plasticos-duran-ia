@@ -21,6 +21,9 @@
                 <button type="button" id="btn-regresar" class="btn-regresar">‹ Regresar</button>
                 <button type="button" id="btn-inicio" class="btn-inicio" hidden="hidden"><span aria-hidden="true">🏠</span> INICIO</button>
             </div>
+            <!-- En qué operación se está (PEDIDO, ENTREGA…): siempre en el mismo
+                 lugar, con el color de su barra. Oculta en Inicio. -->
+            <p id="operacion" class="operacion" hidden="hidden"></p>
             <div class="barra-textos">
                 <h1 id="titulo" class="titulo">Captura</h1>
                 <p id="subtitulo" class="subtitulo" hidden="hidden"></p>

@@ -43,6 +43,7 @@ const pagina = (etiqueta) => `<!DOCTYPE html>
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="theme-color" content="#0b3d91"/>
     <link rel="stylesheet" href="${url(join(modulo, "static", "src", "captura.css"))}"/>
     <script src="${url(join(aqui, "simulacion.js"))}"></script>
     <script src="${url(join(aqui, "escenario.js"))}"></script>
