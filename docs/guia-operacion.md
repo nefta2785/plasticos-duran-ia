@@ -52,6 +52,11 @@ efectivo. **Esa factura también está saldada**: el cliente ya no la debe.
 
 ## 6. Otras reglas importantes
 
+**Para volver a la pantalla de Pedido, Entrega y Cobro, toquen INICIO** (arriba a la derecha),
+desde cualquier pantalla. Si hay un pedido sin enviar, la app pregunta antes de vaciarlo. Los
+pesos de una entrega y lo escrito en un cobro siguen ahí al volver al cliente, mientras no
+cierren ni recarguen la página.
+
 **Si en el celular llegan a Odoo por error**, toquen la app **Captura** en el menú de Odoo:
 los regresa a la pantalla de captura.
 

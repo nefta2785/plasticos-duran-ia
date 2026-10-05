@@ -15,7 +15,12 @@
     </head>
     <body t-att-data-salir="'1' if puede_salir else None">
         <header class="barra">
-            <button type="button" id="btn-regresar" class="btn-regresar">‹ Regresar</button>
+            <!-- Fila de botones: "Regresar" (o "Salir" en Inicio) a la izquierda
+                 e INICIO a la derecha; el título va debajo, a todo lo ancho. -->
+            <div id="barra-botones" class="barra-botones">
+                <button type="button" id="btn-regresar" class="btn-regresar">‹ Regresar</button>
+                <button type="button" id="btn-inicio" class="btn-inicio" hidden="hidden"><span aria-hidden="true">🏠</span> INICIO</button>
+            </div>
             <div class="barra-textos">
                 <h1 id="titulo" class="titulo">Captura</h1>
                 <p id="subtitulo" class="subtitulo" hidden="hidden"></p>

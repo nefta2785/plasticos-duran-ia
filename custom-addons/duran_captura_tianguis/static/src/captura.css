@@ -46,28 +46,57 @@ button {
 
 /* === Barra superior === */
 
+/* Dos filas: arriba los botones (siempre en el mismo lugar), abajo el título
+   a todo lo ancho para que quepan los nombres largos. */
 .barra {
     position: sticky;
     top: 0;
     z-index: 10;
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: 8px;
     padding: 8px 16px;
     padding-top: calc(8px + env(safe-area-inset-top));
     background: var(--primario);
     color: var(--primario-texto);
 }
 
+.barra-botones {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
 .btn-regresar {
     flex: none;
-    min-height: 52px;
+    min-height: 56px;
     padding: 0 16px;
     border: 2px solid var(--primario-texto);
     border-radius: var(--radio);
     background: transparent;
     color: var(--primario-texto);
     font-weight: 700;
+}
+
+/* INICIO: relleno blanco con letra negra, distinto del contorno de Regresar. */
+.btn-inicio {
+    flex: none;
+    margin-left: auto;                   /* siempre a la derecha */
+    min-height: 56px;
+    padding: 0 18px;
+    border: 2px solid var(--fondo);
+    border-radius: var(--radio);
+    background: var(--fondo);
+    color: var(--texto);
+    font-weight: 800;
+}
+.btn-inicio:not(:disabled):active { background: var(--seleccion); }
+/* Mientras se envía o hay una pregunta abierta: gris y sin respuesta. */
+.btn-inicio:disabled {
+    border-color: #9a9a9a;
+    background: #9a9a9a;
+    color: #3d3d3d;
+    cursor: default;
 }
 
 .barra-textos { min-width: 0; }

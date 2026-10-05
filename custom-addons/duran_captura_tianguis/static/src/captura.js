@@ -9,7 +9,8 @@
  *
  * Cada pantalla es una entrada del historial del navegador: el botón "atrás"
  * del celular hace lo mismo que "Regresar", incluida la confirmación antes de
- * vaciar un pedido. */
+ * vaciar un pedido. INICIO (arriba a la derecha) vuelve de un toque a la
+ * primera entrada, la del Inicio. */
 (function () {
     "use strict";
 
@@ -19,7 +20,9 @@
     const puedeSalir = document.body.dataset.salir === "1";
     const ui = {
         barra: document.querySelector(".barra"),
+        botonesBarra: $("barra-botones"),
         regresar: $("btn-regresar"),
+        inicio: $("btn-inicio"),
         titulo: $("titulo"),
         subtitulo: $("subtitulo"),
         categorias: $("categorias"),
@@ -53,6 +56,7 @@
         entregado: null, // respuesta del servidor de la última entrega confirmada
         cobrado: null, // respuesta del servidor del último cobro registrado
         revisando: false, // pidiendo la vista previa de la entrega
+        nivel: 0, // entradas del historial desde el Inicio con que abrió la app
     };
     // Pantallas donde hay un pedido en curso (salir de ellas lo vacía).
     const PANTALLAS_PEDIDO = ["productos", "resumen"];
@@ -61,6 +65,7 @@
     let catalogo = null; // [{id, nombre, productos: [...]}], se carga una sola vez
     let numeroVista = 0; // para descartar respuestas de una pantalla que ya se dejó
     let confirmando = false;
+    let yendoAlInicio = false; // INICIO ya preguntó: el próximo "popstate" va directo al Inicio
 
     // === Utilidades ===
 
@@ -150,6 +155,7 @@
 
     function confirmar(texto, textoSi, textoNo) {
         confirmando = true;
+        actualizarInicio();
         return new Promise((resolver) => {
             ui.modalTexto.textContent = texto;
             ui.modalSi.textContent = textoSi;
@@ -160,6 +166,7 @@
                 ui.modal.hidden = true;
                 ui.modalSi.onclick = ui.modalNo.onclick = ui.modal.onclick = null;
                 confirmando = false;
+                actualizarInicio();
                 resolver(respuesta);
             };
             ui.modalSi.onclick = () => cerrar(true);
@@ -183,17 +190,31 @@
             envio: estado.pantalla === "enviado" ? estado.envio : null,
             entregado: estado.pantalla === "entregado" ? estado.entregado : null,
             cobrado: estado.pantalla === "cobrado" ? estado.cobrado : null,
+            nivel: estado.nivel,
         };
     }
 
     function irA(pantalla, datos) {
-        Object.assign(estado, { pantalla }, datos);
+        Object.assign(estado, { pantalla, nivel: estado.nivel + 1 }, datos);
         history.pushState(fotoHistorial(), "");
         dibujar();
     }
 
+    function preguntaVaciar() {
+        return (
+            `¿Vaciar el pedido de ${estado.cliente.nombre}? ` +
+            `Tiene ${plural(totalPedido(), "producto", "productos")} sin enviar.`
+        );
+    }
+
     async function alMoverseEnHistorial(evento) {
         const destino = evento.state || { pantalla: "inicio", modo: null, zona: null, cliente: null };
+        if (yendoAlInicio) {
+            // Lo pidió INICIO, que ya preguntó por el pedido: directo al Inicio.
+            yendoAlInicio = false;
+            ponerEnInicio();
+            return;
+        }
         if (confirmando || estado.enviando || estado.revisando) {
             // "Atrás" mientras se pregunta o mientras se envía: se queda aquí.
             history.pushState(fotoHistorial(), "");
@@ -206,12 +227,7 @@
             destino.cliente.id === estado.cliente.id;
         const dejaElPedido = PANTALLAS_PEDIDO.includes(estado.pantalla) && !mismoCliente;
         if (dejaElPedido && estado.pedido.size) {
-            const vaciar = await confirmar(
-                `¿Vaciar el pedido de ${estado.cliente.nombre}? ` +
-                    `Tiene ${plural(totalPedido(), "producto", "productos")} sin enviar.`,
-                "Sí, vaciar el pedido",
-                "No, seguir con el pedido"
-            );
+            const vaciar = await confirmar(preguntaVaciar(), "Sí, vaciar el pedido", "No, seguir con el pedido");
             if (!vaciar) {
                 history.pushState(fotoHistorial(), "");
                 return;
@@ -228,7 +244,61 @@
             envio: destino.envio || null,
             entregado: destino.entregado || null,
             cobrado: destino.cobrado || null,
+            nivel: destino.nivel || 0,
         });
+        dibujar();
+    }
+
+    function inicioBloqueado() {
+        return confirmando || estado.enviando || estado.revisando;
+    }
+
+    async function alTocarInicio() {
+        if (estado.pantalla === "inicio" || inicioBloqueado() || yendoAlInicio) {
+            return;
+        }
+        // Solo el pedido se pierde: los pesos de una entrega y el monto de un
+        // cobro se conservan en memoria (como al regresar).
+        if (PANTALLAS_PEDIDO.includes(estado.pantalla) && estado.pedido.size) {
+            const vaciar = await confirmar(preguntaVaciar(), "Sí, vaciar e ir al inicio", "No, seguir con el pedido");
+            if (!vaciar) {
+                return;
+            }
+        }
+        if (PANTALLAS_PEDIDO.includes(estado.pantalla)) {
+            vaciarPedido();
+        }
+        if (estado.nivel > 0) {
+            // A la primera entrada del historial: "atrás" en el Inicio se
+            // comporta como al abrir la app. Lo termina alMoverseEnHistorial.
+            yendoAlInicio = true;
+            history.go(-estado.nivel);
+            // Chrome guarda máximo 50 entradas: si la primera ya se borró, el
+            // salto no lleva a ningún lado (nunca a otra página) y el Inicio
+            // se pone aquí mismo.
+            setTimeout(() => {
+                if (yendoAlInicio) {
+                    yendoAlInicio = false;
+                    ponerEnInicio();
+                }
+            }, 600);
+        } else {
+            ponerEnInicio();
+        }
+    }
+
+    function ponerEnInicio() {
+        Object.assign(estado, {
+            pantalla: "inicio",
+            modo: null,
+            zona: null,
+            cliente: null,
+            envio: null,
+            entregado: null,
+            cobrado: null,
+            nivel: 0,
+        });
+        history.replaceState(fotoHistorial(), "");
         dibujar();
     }
 
@@ -308,9 +378,19 @@
         );
     }
 
+    function actualizarInicio() {
+        // Gris y sin respuesta mientras se envía, se revisa o hay una pregunta abierta.
+        ui.inicio.disabled = inicioBloqueado();
+    }
+
     function dibujar() {
-        ui.regresar.textContent = estado.pantalla === "inicio" ? "‹ Salir" : "‹ Regresar";
-        ui.regresar.hidden = estado.pantalla === "inicio" && !puedeSalir;
+        const enInicio = estado.pantalla === "inicio";
+        ui.regresar.textContent = enInicio ? "‹ Salir" : "‹ Regresar";
+        ui.regresar.hidden = enInicio && !puedeSalir;
+        ui.inicio.hidden = enInicio;
+        // Usuario de tianguis en Inicio: sin Salir ni INICIO, la fila no ocupa lugar.
+        ui.botonesBarra.hidden = ui.regresar.hidden && ui.inicio.hidden;
+        actualizarInicio();
         ui.categorias.hidden = estado.pantalla !== "productos";
         ui.barraPedido.hidden = !PANTALLAS_PEDIDO.concat(PANTALLAS_ENTREGA).includes(estado.pantalla);
         window.scrollTo(0, 0);
@@ -666,6 +746,7 @@
             ui.pedidoAccion.textContent = enResumen ? "✓ Enviar pedido" : "Revisar pedido ›";
         }
         ui.btnPedido.disabled = !productos || estado.enviando;
+        actualizarInicio();
         ui.barraPedido.classList.toggle("con-productos", productos > 0);
         ui.barraPedido.classList.toggle("para-enviar", enResumen && productos > 0);
     }
@@ -1163,6 +1244,7 @@
 
     function actualizarBarraEntrega() {
         const captura = estado.cliente && capturas.get(estado.cliente.id);
+        actualizarInicio();
         ui.pedidoAccion.hidden = false;
         ui.barraPedido.classList.add("con-productos");
         if (estado.pantalla === "entrega-resumen") {
@@ -1635,6 +1717,7 @@
     function dibujarConfirmarCobro() {
         ponerTitulo(estado.cliente.nombre, estado.zona && estado.zona.nombre);
         nuevaVista();
+        actualizarInicio();
         const c = cobroActual();
         if (!c.detalle || !c.tipo) {
             mostrar(
@@ -1832,6 +1915,7 @@
     // === Arranque ===
 
     ui.regresar.addEventListener("click", alTocarRegresar);
+    ui.inicio.addEventListener("click", alTocarInicio);
     ui.btnPedido.addEventListener("click", alTocarBarraPedido);
     window.addEventListener("popstate", alMoverseEnHistorial);
     window.addEventListener("beforeunload", avisarAntesDeSalir);

@@ -5,6 +5,7 @@
 async function pasoInicio() {
     check("Inicio: título", txt("#titulo"), "Captura");
     check("Inicio (administrador): botón superior dice Salir y se ve", [txt("#btn-regresar"), q("#btn-regresar").hidden], ["‹ Salir", false]);
+    check("Inicio: sin INICIO (ya está en el Inicio), la fila de Salir sí se ve", [q("#btn-inicio").hidden, q("#barra-botones").hidden], [true, false]);
     check("Inicio: pregunta", txt(".pregunta"), "¿Qué vas a hacer?");
     check(
         "Inicio: tres modos, Pedido, Entrega y Cobro",
@@ -38,6 +39,7 @@ async function pasoZonas() {
     check("Zonas: botón superior dice Regresar", txt("#btn-regresar"), "‹ Regresar");
     check("Zonas: un botón por zona", qa(".lista .btn").map((b) => b.textContent), ["Bosques", "Guadalupana"]);
     check("Zonas: sin barra de pedido", q("#barra-pedido").hidden, true);
+    checkInicio("Zonas");
 
     boton("Guadalupana").click();
     await espera(80);
@@ -59,6 +61,7 @@ async function pasoClientes() {
         ["Doña Carmen", "<b>Cliente con HTML</b>", "Cliente con historial", "Tortillería La Guadalupana de Doña Lupita"]
     );
     check("Clientes: no se crea ningún <b> desde los datos", qa(".lista b").length, 0);
+    checkInicio("Clientes");
 }
 
 async function pasoProductos() {
@@ -66,6 +69,7 @@ async function pasoProductos() {
     await espera(120);
     check("Productos: título es el cliente, subtítulo la zona", [txt("#titulo"), txt("#subtitulo")], ["Doña Carmen", "Bosques"]);
     check("Productos: pestañas de categoría", nombresPestanas(), ["Bolsas asa", "Rollos"]);
+    checkInicio("Productos");
     check("Productos: primera categoría activa", txt('.categoria[aria-selected="true"]'), "Bolsas asa");
     check(
         "Productos: nombre y precio",
@@ -130,6 +134,7 @@ async function pasoConfirmarAntesDeVaciar() {
         [q("#modal").hidden, txt("#modal-texto")],
         [false, "¿Vaciar el pedido de Doña Carmen? Tiene 4 productos sin enviar."]
     );
+    check("Con la pregunta de Regresar abierta, INICIO queda gris", inicioGris(), true);
     q("#modal-no").click();
     await espera(80);
     check(
@@ -221,6 +226,7 @@ async function pasoResumen() {
     await espera(60);
     check("Resumen: título y subtítulo", [txt("#titulo"), txt("#subtitulo")], ["Doña Carmen", "Bosques"]);
     check("Resumen: sin pestañas", q("#categorias").hidden, true);
+    checkInicio("Resumen");
     check(
         "Resumen: productos en orden de catálogo, con cantidad y unidad",
         qa(".resumen-linea").map((l) => [l.querySelector(".resumen-nombre").textContent, l.querySelector(".resumen-cantidad").textContent]),
@@ -249,6 +255,10 @@ async function pasoEnviar() {
     q("#btn-pedido").click(); // doble toque
     await espera(10);
     check("Enviando: botón deshabilitado", [q("#btn-pedido").disabled, txt("#pedido-accion")], [true, "Enviando…"]);
+    check("Enviando: INICIO gris y deshabilitado", inicioGris(), true);
+    q("#btn-inicio").click();
+    await espera(30);
+    check("Enviando: tocar INICIO no sale de la pantalla", [txt("#titulo"), q("#modal").hidden], ["Doña Carmen", true]);
     history.back();
     await espera(30);
     check("Enviando: el botón atrás no sale de la pantalla", txt("#titulo"), "Doña Carmen");
@@ -269,6 +279,7 @@ async function pasoEnviar() {
             false,
         ]
     );
+    check("Después del error, INICIO vuelve a estar habilitado", q("#btn-inicio").disabled, false);
     q("#btn-pedido").click();
     await espera(250);
     check("Reintento: mismo token (el servidor no duplica)", [envios.length, envios[1].token === primero.token], [2, true]);
@@ -278,6 +289,7 @@ async function pasoEnviar() {
         ["Pedido enviado", "Pedido S00050 enviado", "Doña Carmen · 4 productos"]
     );
     check("Enviado: sin barra del pedido", q("#barra-pedido").hidden, true);
+    checkInicio("Pedido enviado");
     check(
         "Enviado: botones siguiente cliente y cambiar de zona",
         qa(".lista .btn").map((b) => b.textContent),
@@ -335,6 +347,63 @@ async function pasoEnviar() {
     check("Nombre largo: las pestañas quedan debajo de la barra, sin taparse", Math.abs(pestanas - barra) <= 1, true);
 }
 
+async function pasoInicioConPedido() {
+    // Sigue en Productos del cliente de nombre largo, con el pedido vacío.
+    const cliente = "Tortillería La Guadalupana de Doña Lupita";
+    await tocarProducto(440, 2);
+    q("#btn-inicio").click();
+    await espera(30);
+    check(
+        "INICIO con pedido: la misma pregunta, con botones para ir al inicio o seguir",
+        [q("#modal").hidden, txt("#modal-texto"), txt("#modal-si"), txt("#modal-no")],
+        [false, `¿Vaciar el pedido de ${cliente}? Tiene 2 productos sin enviar.`, "Sí, vaciar e ir al inicio", "No, seguir con el pedido"]
+    );
+    check("Con la pregunta de INICIO abierta, INICIO queda gris", inicioGris(), true);
+    await responderModal(false);
+    check(
+        "INICIO, responder No: sigue en Productos con el pedido",
+        [q("#modal").hidden, txt("#titulo"), txt("#pedido-conteo"), q("#btn-inicio").disabled],
+        [true, cliente, "2 productos en el pedido", false]
+    );
+
+    const largo = history.length;
+    const nivel = history.state.nivel;
+    q("#btn-inicio").click();
+    await espera(30);
+    await responderModal(true);
+    check(
+        "INICIO, responder Sí: en el Inicio, sin INICIO y sin pedido",
+        [txt("#titulo"), q("#btn-inicio").hidden, q("#modal").hidden, pideConfirmarAlSalir(), location.pathname.endsWith("captura.html")],
+        ["Captura", true, true, false, true]
+    );
+    check("INICIO deja la primera entrada del historial como Inicio", [history.state.pantalla, history.state.nivel], ["inicio", 0]);
+    // "Atrás" del celular aquí sale a la página anterior (como al abrir la app);
+    // en el marco de la prueba eso saca a la página de prueba, así que se
+    // comprueba con el largo del historial: lo de adelante se borra al seguir.
+    modo("Pedido").click();
+    await espera(80);
+    check(
+        "Al seguir, el historial vuelve a empezar desde el Inicio (se borra lo de adelante)",
+        [history.length, history.state.nivel],
+        [largo - nivel + 1, 1]
+    );
+    boton("Bosques").click();
+    await espera(80);
+    boton("Doña Carmen").click();
+    await espera(120);
+    check("El pedido que se vació no reaparece", txt("#pedido-conteo"), "Pedido vacío");
+
+    // Pantalla final: sale directo, sin preguntar.
+    await tocarProducto(409, 1);
+    q("#btn-pedido").click();
+    await espera(60);
+    q("#btn-pedido").click();
+    await espera(250);
+    check("Pedido enviado otra vez", txt("#titulo"), "Pedido enviado");
+    await tocarInicio();
+    check("INICIO desde Pedido enviado: directo, sin preguntar", [txt("#titulo"), q("#modal").hidden], ["Captura", true]);
+}
+
 // === Modo Entrega ===
 
 async function irAInicio() {
@@ -376,6 +445,7 @@ async function pasoEntregaClientes() {
 
 async function pasoEntregaLista() {
     check("Lista: título cliente y zona", [txt("#titulo"), txt("#subtitulo")], ["Doña Carmen", "Bosques"]);
+    checkInicio("Entrega: lo pendiente");
     check(
         "Lista: agrupada por producto con su precio",
         qa(".entrega-encabezado").map((e) => [e.querySelector(".producto-nombre").textContent, e.querySelector(".producto-precio").textContent]),
@@ -455,6 +525,7 @@ async function pasoEntregaLista() {
     // Peso bloqueado: regresa a la lista señalando el rollo y el motivo.
     await escribirPeso(101, "1250");
     q("#btn-pedido").click();
+    check("Revisando la entrega: INICIO gris y deshabilitado", inicioGris(), true);
     await espera(120);
     check(
         "Peso bloqueado: se queda en la lista con el motivo y la sugerencia",
@@ -462,6 +533,22 @@ async function pasoEntregaLista() {
         ["Doña Carmen", "Un rollo no puede pesar más de 15 kg. ¿Quisiste decir 1.250 kg?", true]
     );
     check("Peso bloqueado: aviso arriba", txt(".aviso-entrega"), "Corrige el peso de los rollos marcados.");
+
+    // INICIO a media entrega: sale sin preguntar y lo capturado se conserva.
+    await tocarInicio();
+    check("INICIO con pesos capturados: directo, sin preguntar", [txt("#titulo"), q("#modal").hidden], ["Captura", true]);
+    check("En el Inicio, recargar sigue avisando (hay pesos sin confirmar)", pideConfirmarAlSalir(), true);
+    modo("Entrega").click();
+    await espera(80);
+    boton("Bosques").click();
+    await espera(80);
+    boton("Doña Carmen").click();
+    await espera(120);
+    check(
+        "De vuelta en el cliente: el peso y la cantidad siguen ahí",
+        [campoPeso(101).value, cantidadEntrega("p440"), cantidadEntrega("p409")],
+        ["1250", "1 kg", "2 c/u"]
+    );
 }
 
 async function pasoEntregaResumen() {
@@ -470,6 +557,7 @@ async function pasoEntregaResumen() {
     q("#btn-pedido").click();
     await espera(150);
     check("Resumen: título", [txt("#titulo"), txt(".pregunta")], ["Doña Carmen", "Revisa la entrega"]);
+    checkInicio("Entrega: resumen");
     check(
         "Resumen: cada línea con su importe",
         qa(".resumen-entrega").map((l) => [l.querySelector(".resumen-detalle").textContent, l.querySelector(".resumen-importe").textContent]),
@@ -523,6 +611,7 @@ async function pasoEntregaConfirmar() {
     q("#btn-pedido").click(); // doble toque
     await espera(10);
     check("Confirmando: botón bloqueado", [q("#btn-pedido").disabled, txt("#pedido-accion")], [true, "Confirmando…"]);
+    check("Confirmando la entrega: INICIO gris y deshabilitado", inicioGris(), true);
     history.back();
     await espera(30);
     check("Confirmando: atrás no sale de la pantalla", txt(".pregunta"), "Revisa la entrega");
@@ -549,6 +638,7 @@ async function pasoEntregaConfirmar() {
     );
     check("Éxito: botones", qa(".lista .btn").map((b) => b.textContent), ["Siguiente cliente de Bosques", "Cambiar de zona"]);
     check("Éxito: sin barra", q("#barra-pedido").hidden, true);
+    checkInicio("Entrega confirmada");
     check("Entrega confirmada: recargar ya no pregunta", pideConfirmarAlSalir(), false);
     boton("Siguiente cliente de Bosques").click();
     await espera(120);
@@ -568,6 +658,13 @@ async function pasoEntregaAlgoMasYNada() {
         ["Cliente con historial", false, "⭐ Lo de siempre"]
     );
     check("Solo «No se lo llevó» también cuenta como capturado", pideConfirmarAlSalir(), true);
+    await tocarProducto(440, 1);
+    q("#btn-inicio").click();
+    await espera(30);
+    check("Algo más: INICIO con pedido también pregunta", txt("#modal-texto"), "¿Vaciar el pedido de Cliente con historial? Tiene 1 producto sin enviar.");
+    await responderModal(false);
+    tarjeta(440).querySelector(".btn-quitar").click();
+    await espera(10);
     await regresar();
     check(
         "Regresar: vuelve a la entrega con lo capturado",
@@ -596,6 +693,8 @@ async function pasoEntregaAlgoMasYNada() {
     const enviada = confirmaciones[confirmaciones.length - 1];
     check("Responder Sí: se envía sin rollos ni productos", [confirmaciones.length, enviada.rollos, enviada.productos, enviada.movimientos_vistos], [antes + 1, [], [], [201]]);
     check("Nada: éxito con Cobrar $0.00", txt(".cobrar"), "Cobrar: $0.00");
+    await tocarInicio();
+    check("INICIO desde Entrega confirmada: directo, sin preguntar", [txt("#titulo"), q("#modal").hidden], ["Captura", true]);
 }
 
 // === Modo Cobro ===
@@ -693,6 +792,7 @@ async function pasoCobroDetalle() {
     boton("Doña Carmen").click();
     await espera(120);
     check("Detalle: título cliente y zona", [txt("#titulo"), txt("#subtitulo")], ["Doña Carmen", "Bosques"]);
+    checkInicio("Cobro: lo que debe");
     check(
         "Detalle: entregado sin facturar con pesos, precios e importes",
         importesCobro(".cobro-entregado"),
@@ -715,6 +815,7 @@ async function pasoCobroParte() {
     await espera(80);
     check("Una parte: título y campo con teclado decimal", [txt(".pregunta"), q(".monto-campo").getAttribute("inputmode")], ["Pagó una parte", "decimal"]);
     check("Una parte: sin monto, el eco lo pide", txt(".monto-eco"), "Escribe cuánto pagó");
+    checkInicio("Cobro: confirmación");
     check("Una parte vacía: recargar no pregunta", pideConfirmarAlSalir(), false);
     await escribirMonto("100,5");
     check(
@@ -723,6 +824,17 @@ async function pasoCobroParte() {
         ["Recibe $100.50 · Queda debiendo $1,199.50", "$1,300.00", "$100.50", "$1,199.50"]
     );
     check("Con un monto escrito: recargar pregunta antes", pideConfirmarAlSalir(), true);
+    await tocarInicio();
+    check("INICIO con monto escrito: directo, sin preguntar", [txt("#titulo"), q("#modal").hidden], ["Captura", true]);
+    modo("Cobro").click();
+    await espera(80);
+    boton("Bosques").click();
+    await espera(80);
+    boton("Doña Carmen").click();
+    await espera(120);
+    boton("Pagó una parte").click();
+    await espera(80);
+    check("De vuelta en el cobro: el monto sigue ahí", [q(".monto-campo").value, importeDe("cobro-recibido")], ["100,5", "$100.50"]);
     for (const [texto, mensaje] of [
         ["0", "El importe debe ser mayor a $0."],
         ["", "Escribe cuánto pagó."],
@@ -776,6 +888,7 @@ async function pasoCobroEnviar() {
     q(".btn-registrar-cobro").click(); // doble toque
     await espera(10);
     check("Registrando: botón bloqueado", [q(".btn-registrar-cobro").disabled, txt(".btn-registrar-cobro")], [true, "Registrando…"]);
+    check("Registrando el cobro: INICIO gris y deshabilitado", inicioGris(), true);
     history.back();
     await espera(30);
     check("Registrando: atrás no sale de la pantalla", txt(".pregunta"), "Pagó una parte");
@@ -798,10 +911,11 @@ async function pasoCobroEnviar() {
     );
     check("Éxito: botones", qa(".lista .btn").map((b) => b.textContent), ["Siguiente cliente de Bosques", "Cambiar de zona"]);
     check("Cobro registrado: recargar ya no pregunta", pideConfirmarAlSalir(), false);
+    checkInicio("Cobro registrado");
     boton("Siguiente cliente de Bosques").click();
     await espera(120);
-    // Pedidos: Guadalupana, Bosques, tres «Regresar» y este.
-    check("Siguiente cliente: clientes por cobrar de la zona", [txt("#titulo"), llamadasA("cobro/clientes")], ["Bosques", 6]);
+    // Pedidos: Guadalupana, Bosques, tres «Regresar», la vuelta desde INICIO y este.
+    check("Siguiente cliente: clientes por cobrar de la zona", [txt("#titulo"), llamadasA("cobro/clientes")], ["Bosques", 7]);
 }
 
 async function pasoCobroTodoYNada() {
@@ -820,8 +934,12 @@ async function pasoCobroTodoYNada() {
     check("Pagó todo: se envía sin monto", [todo.tipo, "monto" in todo], ["todo", false]);
     check("Pagó todo: éxito sin «queda debiendo»", [txt(".cobrar"), q(".queda-debiendo")], ["Cobrado: $150.00", null]);
 
-    boton("Siguiente cliente de Bosques").click();
-    await espera(120);
+    await tocarInicio();
+    check("INICIO desde Cobro registrado: directo, sin preguntar", [txt("#titulo"), q("#modal").hidden], ["Captura", true]);
+    modo("Cobro").click();
+    await espera(80);
+    boton("Bosques").click();
+    await espera(80);
     boton("Doña Carmen").click();
     await espera(120);
     boton("No pagó hoy").click();
@@ -844,11 +962,58 @@ async function pasoCobroTodoYNada() {
     check("Cambiar de zona: Zonas de Cobro", [txt("#titulo"), txt("#subtitulo")], ["Zonas", "Cobro"]);
 }
 
+// === Historial de más de 50 pantallas (Chrome borra las más antiguas) ===
+
+async function enviarUnPedido() {
+    await tocarProducto(409, 1);
+    q("#btn-pedido").click();
+    await espera(40);
+    q("#btn-pedido").click();
+    await espera(120);
+}
+
+async function pasoHistorialLargo() {
+    await irAInicio();
+    modo("Pedido").click();
+    await espera(60);
+    boton("Bosques").click();
+    await espera(60);
+    boton("Doña Carmen").click();
+    await espera(100);
+    await enviarUnPedido();
+    for (let i = 0; i < 16; i++) {
+        boton("Siguiente cliente de Bosques").click();
+        await espera(60);
+        boton("Doña Carmen").click();
+        await espera(100);
+        await enviarUnPedido();
+    }
+    check(
+        "Historial largo: Chrome guarda máximo 50 y la app lleva más de 50 pantallas",
+        [history.length, history.state.nivel > history.length, txt("#titulo")],
+        [50, true, "Pedido enviado"]
+    );
+    await tocarInicio();
+    check("Historial largo: INICIO no sale de la página", location.pathname.endsWith("captura.html"), true);
+    await espera(750); // la primera entrada ya no existe: entra el respaldo de 600 ms
+    check(
+        "Historial largo: INICIO llega al Inicio",
+        [txt("#titulo"), q("#btn-inicio").hidden, history.state.pantalla, history.state.nivel],
+        ["Captura", true, "inicio", 0]
+    );
+    modo("Pedido").click();
+    await espera(80);
+    check("Después del respaldo, la app navega normal", [txt("#titulo"), history.state.nivel], ["Zonas", 1]);
+    await tocarInicio();
+    check("Y el siguiente INICIO va directo, sin respaldo", txt("#titulo"), "Captura");
+}
+
 // === Usuario de tianguis (sin data-salir en <body>) ===
 
 async function pasoTianguisSinSalir() {
     await espera(80);
     check("Tianguis: Inicio sin botón Salir", [txt("#titulo"), q("#btn-regresar").hidden, !!boton("‹ Salir")], ["Captura", true, false]);
+    check("Tianguis: en Inicio la fila de botones no ocupa lugar", [q("#barra-botones").hidden, q("#btn-inicio").hidden], [true, true]);
     checkAncho("Inicio de tianguis");
     q("#btn-regresar").click(); // aunque se tocara, no sale de la pantalla
     await espera(120);
@@ -856,6 +1021,15 @@ async function pasoTianguisSinSalir() {
     modo("Pedido").click();
     await espera(80);
     check("Tianguis: en Zonas sí hay «Regresar»", [txt("#titulo"), q("#btn-regresar").hidden, txt("#btn-regresar")], ["Zonas", false, "‹ Regresar"]);
+    checkInicio("Zonas (tianguis)");
+    await tocarInicio();
+    check(
+        "Tianguis: INICIO vuelve al Inicio sin salir de la página, y la fila se oculta otra vez",
+        [txt("#titulo"), location.pathname.endsWith("tianguis.html"), q("#barra-botones").hidden],
+        ["Captura", true, true]
+    );
+    modo("Pedido").click();
+    await espera(80);
     await regresar();
     check("Tianguis: de vuelta en Inicio, otra vez sin botón", [txt("#titulo"), q("#btn-regresar").hidden], ["Captura", true]);
 }
@@ -864,9 +1038,10 @@ const PASOS_TIANGUIS = [pasoTianguisSinSalir];
 
 const PASOS = [
     pasoInicio, pasoZonas, pasoClientes, pasoProductos, pasoConfirmarAntesDeVaciar, pasoLoDeSiempre,
-    pasoResumen, pasoEnviar, pasoEntregaClientes, pasoEntregaLista, pasoEntregaResumen,
+    pasoResumen, pasoEnviar, pasoInicioConPedido, pasoEntregaClientes, pasoEntregaLista, pasoEntregaResumen,
     pasoEntregaConfirmar, pasoEntregaAlgoMasYNada,
     pasoCobroClientes, pasoCobroAvisos, pasoCobroDetalle, pasoCobroParte, pasoCobroEnviar, pasoCobroTodoYNada,
+    pasoHistorialLargo,
 ];
 
 window.addEventListener("load", async () => {

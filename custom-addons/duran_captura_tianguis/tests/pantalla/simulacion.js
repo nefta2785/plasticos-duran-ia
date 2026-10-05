@@ -460,6 +460,46 @@ async function regresar() {
     await espera(120);
 }
 
+async function tocarInicio() {
+    q("#btn-inicio").click();
+    await espera(150);
+}
+
+let posicionInicio = null; // la de la primera pantalla; las demás deben coincidir
+
+function checkInicio(pantalla) {
+    // INICIO visible, habilitado, grande, arriba a la derecha y siempre en el
+    // mismo lugar; sin encimarse con Regresar, el título ni la barra de abajo.
+    const inicio = q("#btn-inicio");
+    const r = inicio.getBoundingClientRect();
+    const posicion = [r.left, r.top, r.width, r.height].map(Math.round);
+    posicionInicio = posicionInicio || posicion;
+    const regresar = q("#btn-regresar").getBoundingClientRect();
+    const barraAbajo = q("#barra-pedido");
+    check(
+        `INICIO visible y en el mismo lugar: ${pantalla}`,
+        [
+            inicio.hidden,
+            inicio.disabled,
+            txt("#btn-inicio"),
+            posicion,
+            r.height >= 56 && regresar.height >= 56,
+            Math.round(r.right) === document.documentElement.clientWidth - 16,
+            Math.round(r.top) === Math.round(regresar.top) && r.left > regresar.right,
+            r.bottom <= q("#titulo").getBoundingClientRect().top,
+            !barraAbajo.hidden && r.bottom > barraAbajo.getBoundingClientRect().top,
+        ],
+        [false, false, "🏠 INICIO", posicionInicio, true, true, true, true, false]
+    );
+}
+
+function inicioGris() {
+    // Deshabilitado y pintado de gris (rojo = verde = azul).
+    const inicio = q("#btn-inicio");
+    const [r, g, b] = getComputedStyle(inicio).backgroundColor.match(/\d+/g).map(Number);
+    return inicio.disabled && r === g && g === b && r < 255;
+}
+
 // Tamaño de pantalla del iPhone 16 (correr.mjs carga la página en un marco de
 // este tamaño).
 const CELULAR = [393, 852];
