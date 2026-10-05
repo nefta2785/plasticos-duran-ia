@@ -18,6 +18,8 @@ producto, así que tienen que quedar listos **antes** de dar de alta productos.
 5. Ventas › Configuración › Ajustes: **"Bloquear órdenes confirmadas" desactivado**.
 6. Instalar `duran_captura_tianguis` y revisar los **tres parámetros de peso** (se crean al
    instalar).
+7. Los productos que se venden por kg deben usar la unidad **"kg" estándar de Odoo**, no una
+   unidad creada a mano: la app la reconoce por esa unidad y no por su nombre.
 
 ## Detalle de cada ajuste
 
@@ -27,6 +29,7 @@ producto, así que tienen que quedar listos **antes** de dar de alta productos.
 | Límites de peso de un rollo | Los tres parámetros deben existir, con un número de kg mayor a 0 | Ajustes › Técnico › Parámetros del sistema (modo desarrollador): `duran_captura_tianguis.peso_bloqueo_max` (15), `duran_captura_tianguis.peso_advertencia_min` (0.5), `duran_captura_tianguis.peso_advertencia_max` (8) | Sin ellos, la vista previa y la confirmación de entregas dan error. Se crean al instalar el módulo; actualizarlo no pisa los valores ajustados. |
 | Política de facturación de los productos | **"Cantidades entregadas"** ("Facturar lo entregado") en todos los productos que se venden, y como ajuste por defecto de Ventas | Para los productos nuevos: Ventas › Configuración › Ajustes › Facturación › "Cantidades a facturar de las órdenes de venta" → "Facturar lo entregado". En cada producto: pestaña Información general › "Política de facturación" | Al cobrar, la app factura lo entregado sin facturar. Con "Cantidades pedidas", Odoo factura lo pedido aunque todavía no se entregue, y aparecería en el cobro. La app no lo revisa. **Cambiar el Tipo de un producto le regresa "Cantidades pedidas"** (ver el detalle abajo). |
 | Diario de efectivo | **Exactamente un** diario activo de tipo **Efectivo** en la compañía | Facturación › Configuración › Contabilidad › Diarios, columna "Tipo" | El efectivo que se cobra en el tianguis se registra en ese diario. Con 0 o con 2 o más, la app no registra "Pagó todo" ni "Pagó una parte" y avisa que hay que revisar los diarios ("No pagó hoy" sí funciona). Los diarios archivados no cuentan. |
+| Unidad de los productos por kg | La unidad **"kg" estándar de Odoo** (la que trae Odoo, `uom.product_uom_kgm`), no una creada a mano aunque se llame igual | En cada producto: pestaña Información general › "Unidad de medida" | La app la reconoce por esa unidad, no por su nombre (renombrarla o traducirla no afecta). Con otra unidad, un producto que se pesa y se vende por kg, como "Hoja polipapel (KG suelto)", diría "3 rollos" en lugar de "3 kg" al levantar el pedido y en Acomodo de entregas. |
 | Impuestos por defecto | **Ninguno**: sin "Impuesto de venta" predeterminado, y ningún producto con "Impuestos de venta" | Facturación › Configuración › Ajustes › Impuestos › "Impuestos predeterminados" › "Impuesto de venta" (vacío). En cada producto: pestaña Información general › "Impuestos de venta" (vacío) | El precio del tianguis es el precio final. Odoo le pone a cada producto nuevo el impuesto de venta predeterminado de la compañía, y la app calcula el importe con los impuestos del producto: con IVA, un producto de $70/kg se cobraría a $81.20/kg. La app no lo revisa. |
 
 ### Detalle de la política de facturación (verificado en Odoo 19)

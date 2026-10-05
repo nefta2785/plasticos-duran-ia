@@ -1,3 +1,4 @@
+from . import test_acomodo
 from . import test_bitacora
 from . import test_cobro_arqueo
 from . import test_cobro_bitacora

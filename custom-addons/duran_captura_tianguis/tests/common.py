@@ -23,7 +23,9 @@ RUTAS_ENTREGA = (
 )
 # Rutas del modo Cobro.
 RUTAS_COBRO = ("/captura/api/cobro/clientes", "/captura/api/cobro/detalle", "/captura/api/cobro/confirmar")
-RUTAS_API = RUTAS_PEDIDO + RUTAS_ENTREGA + RUTAS_COBRO
+# Acomodo de entregas (solo lectura).
+RUTAS_ACOMODO = ("/captura/api/acomodo",)
+RUTAS_API = RUTAS_PEDIDO + RUTAS_ENTREGA + RUTAS_COBRO + RUTAS_ACOMODO
 
 
 class CapturaDatosPrueba:

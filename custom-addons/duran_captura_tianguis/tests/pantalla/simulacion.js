@@ -20,8 +20,8 @@ const datos = {
     "/captura/api/habituales": (p) =>
         p.cliente_id === 12
             ? [
-                  { id: 464, nombre: "Estrella 25x35", unidad: "c/u", es_peso_variable: true, precio: 85, precio_texto: "$85/kg" },
-                  { id: 440, nombre: "Blanca #2", unidad: "kg", es_peso_variable: false, precio: 70, precio_texto: "$70/kg" },
+                  { id: 464, nombre: "Estrella 25x35", unidad: "c/u", por_kg: false, es_peso_variable: true, precio: 85, precio_texto: "$85/kg" },
+                  { id: 440, nombre: "Blanca #2", unidad: "kg", por_kg: true, es_peso_variable: false, precio: 70, precio_texto: "$70/kg" },
               ]
             : [],
     "/captura/api/catalogo": [
@@ -29,15 +29,17 @@ const datos = {
             id: 4,
             nombre: "Bolsas asa",
             productos: [
-                { id: 440, nombre: "Blanca #2", unidad: "kg", es_peso_variable: false, precio: 70, precio_texto: "$70/kg" },
-                { id: 409, nombre: "Caja 25x35 (5kg)", unidad: "c/u", es_peso_variable: false, precio: 325, precio_texto: "$325 c/u" },
+                { id: 440, nombre: "Blanca #2", unidad: "kg", por_kg: true, es_peso_variable: false, precio: 70, precio_texto: "$70/kg" },
+                { id: 409, nombre: "Caja 25x35 (5kg)", unidad: "c/u", por_kg: false, es_peso_variable: false, precio: 325, precio_texto: "$325 c/u" },
+                // Se pesa, pero se vende por kg: su cantidad dice kg, no rollos.
+                { id: 472, nombre: "Hoja polipapel 25x35 (KG suelto)", unidad: "kg", por_kg: true, es_peso_variable: true, precio: 70, precio_texto: "$70/kg" },
             ],
         },
         {
             id: 8,
             nombre: "Rollos",
             productos: [
-                { id: 464, nombre: "Estrella 25x35", unidad: "c/u", es_peso_variable: true, precio: 85, precio_texto: "$85/kg" },
+                { id: 464, nombre: "Estrella 25x35", unidad: "c/u", por_kg: false, es_peso_variable: true, precio: 85, precio_texto: "$85/kg" },
             ],
         },
     ],
@@ -88,11 +90,12 @@ function enviarSimulado(params) {
 
 // === Modo Entrega ===
 
-const ESTRELLA = { id: 464, nombre: "Estrella 25x35", unidad: "c/u", es_peso_variable: true, precio: 85, precio_texto: "$85/kg" };
-const BLANCA = { id: 440, nombre: "Blanca #2", unidad: "kg", es_peso_variable: false, precio: 70, precio_texto: "$70/kg" };
-const CAJA = { id: 409, nombre: "Caja 25x35 (5kg)", unidad: "c/u", es_peso_variable: false, precio: 325, precio_texto: "$325 c/u" };
-const BOLSA_BASURA = { id: 470, nombre: "Bolsa de basura 60x90", unidad: "kg", es_peso_variable: false, precio: 45, precio_texto: "$45/kg" };
-const SUIZO = { id: 471, nombre: "Suizo 18x25", unidad: "kg", es_peso_variable: false, precio: 67, precio_texto: "$67/kg" };
+const ESTRELLA = { id: 464, nombre: "Estrella 25x35", unidad: "c/u", por_kg: false, es_peso_variable: true, precio: 85, precio_texto: "$85/kg" };
+const BLANCA = { id: 440, nombre: "Blanca #2", unidad: "kg", por_kg: true, es_peso_variable: false, precio: 70, precio_texto: "$70/kg" };
+const CAJA = { id: 409, nombre: "Caja 25x35 (5kg)", unidad: "c/u", por_kg: false, es_peso_variable: false, precio: 325, precio_texto: "$325 c/u" };
+const BOLSA_BASURA = { id: 470, nombre: "Bolsa de basura 60x90", unidad: "kg", por_kg: true, es_peso_variable: false, precio: 45, precio_texto: "$45/kg" };
+const KG_SUELTO = { id: 472, nombre: "Hoja polipapel 25x35 (KG suelto)", unidad: "kg", por_kg: true, es_peso_variable: true, precio: 70, precio_texto: "$70/kg" };
+const SUIZO = { id: 471, nombre: "Suizo 18x25", unidad: "kg", por_kg: true, es_peso_variable: false, precio: 67, precio_texto: "$67/kg" };
 const mov = (move_id, cantidad, sin_existencia, precio) => ({
     move_id, cantidad, reservada: sin_existencia ? 0 : cantidad, sin_existencia, precio,
 });
@@ -359,6 +362,42 @@ const datosCobro = {
     "/captura/api/cobro/detalle": (p) => detallesCobro[p.cliente_id](),
 };
 
+// === Acomodo de entregas ===
+
+// /captura/api/acomodo: "ok", "vacio" (sin pedidos) o UNA vez "sin-red".
+let modoAcomodo = "ok";
+const BOSQUES_ACOMODO = [
+    { cliente: "Doña Carmen", productos: [
+        { ...BLANCA, cantidad: 5 }, { ...ESTRELLA, cantidad: 2 }, { ...CAJA, cantidad: 2 },
+    ] },
+    { cliente: "Tortillería La Guadalupana de Doña Lupita", productos: [
+        { ...BOLSA_BASURA, nombre: "Bolsa de basura jumbo negra extra gruesa 90x120 calibre 300", cantidad: 1.5 },
+    ] },
+    { cliente: "<b>Cliente con HTML</b>", productos: [{ ...ESTRELLA, cantidad: 1 }] },
+    { cliente: "Doña Carmen", productos: [{ ...SUIZO, cantidad: 2 }] }, // volvió a pedir
+    { cliente: "Cliente con historial", productos: [{ ...BLANCA, cantidad: 1 }, { ...SUIZO, cantidad: 3 }] },
+    { cliente: "Don Beto", productos: [{ ...CAJA, cantidad: 1 }, { ...KG_SUELTO, cantidad: 3 }, { ...ESTRELLA, cantidad: 3 }] },
+];
+function acomodoSimulado() {
+    const modo = modoAcomodo;
+    if (modo === "sin-red") {
+        modoAcomodo = "ok";
+        throw new TypeError("Failed to fetch");
+    }
+    if (modo === "vacio") {
+        return [];
+    }
+    const pedidos = (lista, primerId) => lista.map((p, i) => ({ id: primerId + i, posicion: i + 1, ...p }));
+    return [
+        { id: 1, nombre: "Bosques", pedidos: pedidos(BOSQUES_ACOMODO, 60) },
+        {
+            id: 3, nombre: "Tianguis Mercado Jardines de la Montaña Poniente",
+            pedidos: pedidos([{ cliente: "Mario fruta", productos: [{ ...ESTRELLA, cantidad: 3 }] }], 70),
+        },
+        { id: false, nombre: "Sin zona", pedidos: pedidos([{ cliente: "Cliente sin zona", productos: [{ ...BLANCA, cantidad: 2 }] }], 80) },
+    ];
+}
+
 window.fetch = async (ruta, opciones) => {
     const params = JSON.parse(opciones.body).params;
     llamadas.push(ruta);
@@ -375,6 +414,8 @@ window.fetch = async (ruta, opciones) => {
     } else if (ruta === "/captura/api/cobro/confirmar") {
         await espera(60);
         cuerpo = confirmarCobroSimulado(params);
+    } else if (ruta === "/captura/api/acomodo") {
+        cuerpo = { result: acomodoSimulado() };
     } else if (datosCobro[ruta]) {
         cuerpo = { result: datosCobro[ruta](params) };
     } else if (datosEntrega[ruta]) {
@@ -399,7 +440,7 @@ const nombresPestanas = () => qa(".categoria").map((b) => b.firstChild.textConte
 const modo = (nombre) => qa(".btn-modo").find((b) => b.querySelector(".modo-nombre").textContent === nombre);
 const tarjeta = (id) => q(`[data-producto="${id}"]`);
 const cantidad = (id) => {
-    const c = tarjeta(id) && tarjeta(id).querySelector(".producto-cantidad");
+    const c = tarjeta(id) && tarjeta(id).querySelector(".producto-cantidad-texto");
     return c ? c.textContent : null;
 };
 const renglon = (clave) => q(`[data-renglon="${clave}"]`);
@@ -448,12 +489,26 @@ async function responderModal(si) {
 
 const llamadasA = (final) => llamadas.filter((ruta) => ruta.endsWith(final)).length;
 
+// "+" de la tarjeta: el redondo sin cantidad o el de la fila [ − ] n [ + ].
+const botonMas = (id) => tarjeta(id).querySelector(".producto-mas, .btn-mas");
+const botonMenos = (id) => tarjeta(id) && tarjeta(id).querySelector(".btn-menos");
+
 async function tocarProducto(id, veces = 1) {
     for (let i = 0; i < veces; i++) {
-        tarjeta(id).querySelector(".producto-sumar").click();
+        botonMas(id).click();
         await espera(5);
     }
 }
+
+async function restarProducto(id, veces = 1) {
+    for (let i = 0; i < veces; i++) {
+        botonMenos(id).click();
+        await espera(5);
+    }
+}
+
+// Tamaño de diseño (sin la animación «golpe», que encoge la tarjeta un instante).
+const medida = (nodo) => [nodo.offsetWidth, nodo.offsetHeight];
 
 async function regresar() {
     q("#btn-regresar").click();

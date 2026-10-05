@@ -57,6 +57,14 @@ desde cualquier pantalla. Si hay un pedido sin enviar, la app pregunta antes de 
 pesos de una entrega y lo escrito en un cobro siguen ahí al volver al cliente, mientras no
 cierren ni recarguen la página.
 
+**Al levantar un pedido, para agregar más de uno toquen "+"; para quitar, toquen "−".** Con 1,
+el "−" quita el producto del pedido. Tocar el nombre del producto no hace nada.
+
+**Para acomodar el carrito, toquen "Acomodo de entregas"** en la pantalla de inicio. Salen los
+pedidos que falta entregar, separados por zona y en el orden en que se levantaron: el número 1
+se entrega primero y va hasta arriba del carrito. Cuentan los pedidos levantados desde las 8 de
+la noche del día anterior; los de después de las 8 de la noche salen al día siguiente.
+
 **Si en el celular llegan a Odoo por error**, toquen la app **Captura** en el menú de Odoo:
 los regresa a la pantalla de captura.
 

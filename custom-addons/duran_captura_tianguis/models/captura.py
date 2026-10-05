@@ -1,7 +1,8 @@
 import re
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
+import pytz
 from markupsafe import Markup
 
 from odoo import Command, _, api, fields, models
@@ -29,6 +30,12 @@ PARAMETROS_PESO = {
 # Sin punto decimal y de este valor en adelante, se sugiere que faltó el punto
 # ("1250" -> "¿Quisiste decir 1.250 kg?").
 PESO_SIN_PUNTO_SOSPECHOSO = 100
+
+# Acomodo de entregas: el "día operativo" de un día va de esta hora del día
+# anterior (inclusive) a esta hora de ese día (exclusive), en hora local. Los
+# pedidos levantados en la noche son para las entregas del día siguiente.
+HORA_CORTE_DIA_OPERATIVO = 20
+ZONA_HORARIA_OPERACION = "America/Mexico_City"  # si el usuario no tiene zona horaria
 
 
 class DuranCaptura(models.AbstractModel):
@@ -806,6 +813,118 @@ class DuranCaptura(models.AbstractModel):
             ("state", "not in", ("done", "cancel")),
         ])
 
+    # === Acomodo de entregas === #
+
+    @api.model
+    def _ahora(self):
+        """ Momento actual en UTC (sin zona horaria), aparte para que las
+        pruebas lo puedan fijar. """
+        return fields.Datetime.now()
+
+    @api.model
+    def _rango_dia_operativo(self, ahora):
+        """ (desde, hasta) en UTC sin zona horaria del día operativo que
+        contiene `ahora` (UTC sin zona horaria): de las HORA_CORTE_DIA_OPERATIVO
+        del día anterior (inclusive) a las HORA_CORTE_DIA_OPERATIVO del día
+        (exclusive), en la hora local de quien consulta. Pasada la hora de
+        corte ya es el día operativo de mañana. """
+        zona_horaria = pytz.timezone(self.env.user.tz or ZONA_HORARIA_OPERACION)
+        local = pytz.utc.localize(ahora).astimezone(zona_horaria)
+        dia = local.date()
+        if local.hour >= HORA_CORTE_DIA_OPERATIVO:
+            dia += timedelta(days=1)
+
+        def corte(fecha):
+            return zona_horaria.localize(
+                datetime.combine(fecha, time(HORA_CORTE_DIA_OPERATIVO))
+            ).astimezone(pytz.utc).replace(tzinfo=None)
+
+        return corte(dia - timedelta(days=1)), corte(dia)
+
+    @api.model
+    def get_acomodo(self):
+        """ Pedidos del día operativo con algo pendiente de entregar (misma
+        regla que el modo Entrega), agrupados por zona, para acomodar el carrito
+        en el orden de entrega. Solo lectura.
+
+        - Pedidos: del más antiguo al más reciente (`date_order`, desempate por
+          id); la posición reinicia en 1 en cada zona.
+        - Zona de cada pedido: la de la orden; si no tiene (orden hecha en
+          Odoo) y el cliente tiene una sola etiqueta, esa; si no, "Sin zona".
+          Zonas en el orden de su pedido más antiguo; "Sin zona" al final.
+        - Productos: lo pendiente de ESE pedido, sumado por producto (un rollo
+          cuenta 1, sin peso), en el orden de las líneas de la orden.
+
+        Sin sudo: todo sale de `stock.move`, que quien captura sí puede leer, y
+        de los datos de la orden guardados en el movimiento (`fecha_pedido`,
+        `zona_id`, `cliente_id`), porque con "Ventas: solo sus documentos" no
+        puede leer órdenes de otros vendedores. """
+        desde, hasta = self._rango_dia_operativo(self._ahora())
+        Movimiento = self.env["stock.move"]
+        pendiente = [
+            ("picking_id.picking_type_code", "=", "outgoing"),
+            ("picking_id.location_dest_id.usage", "=", "customer"),
+            ("picking_id.sale_id", "!=", False),
+            ("picking_id.return_id", "=", False),
+            ("picking_id.state", "not in", ("done", "cancel")),
+            ("state", "not in", ("done", "cancel")),
+        ]
+        del_dia = Movimiento.search(pendiente + [("fecha_pedido", ">=", desde), ("fecha_pedido", "<", hasta)])
+        # Todo lo pendiente de esos pedidos (también movimientos agregados a mano
+        # en la entrega, que no tienen línea de venta ni fecha del pedido).
+        movimientos = Movimiento.search(
+            pendiente + [("picking_id.sale_id", "in", del_dia.picking_id.sale_id.ids)]
+        ).filtered(lambda m: m.product_uom.compare(m.product_uom_qty, 0.0) > 0)
+
+        # Datos de cada orden, de sus movimientos del día (todos con línea de venta).
+        ordenes = {
+            movimiento.picking_id.sale_id.id: {
+                "fecha": movimiento.fecha_pedido, "cliente": movimiento.cliente_id, "zona": movimiento.zona_id,
+            }
+            for movimiento in del_dia
+        }
+
+        currency = self.env.company.currency_id
+        uom_unidad = self.env.ref("uom.product_uom_unit", raise_if_not_found=False)
+        pedidos = {}
+        for movimiento in movimientos.sorted(lambda m: (m.sale_line_id.id or 0, m.id)):
+            orden_id = movimiento.picking_id.sale_id.id
+            pedido = pedidos.setdefault(orden_id, {**ordenes[orden_id], "productos": {}})
+            producto = movimiento.product_id
+            linea = pedido["productos"].setdefault(producto.id, {
+                **{
+                    clave: valor
+                    for clave, valor in self._get_producto_vals(producto, currency, uom_unidad).items()
+                    if clave in ("id", "nombre", "unidad", "por_kg", "es_peso_variable")
+                },
+                "cantidad": 0.0,
+            })
+            linea["cantidad"] += movimiento.product_uom_qty
+
+        zonas = {}
+        sin_zona = []
+        for pedido_id, pedido in sorted(pedidos.items(), key=lambda par: (par[1]["fecha"], par[0])):
+            zona = pedido["zona"]
+            if not zona and len(pedido["cliente"].category_id) == 1:
+                zona = pedido["cliente"].category_id
+            destino = zonas.setdefault(zona.id, {"zona": zona, "pedidos": []})["pedidos"] if zona else sin_zona
+            destino.append({
+                "id": pedido_id,
+                "posicion": len(destino) + 1,
+                "cliente": pedido["cliente"].name,
+                "productos": [
+                    {**linea, "cantidad": float_round(linea["cantidad"], precision_digits=6)}
+                    for linea in pedido["productos"].values()
+                ],
+            })
+        resultado = [
+            {"id": grupo["zona"].id, "nombre": grupo["zona"].display_name, "pedidos": grupo["pedidos"]}
+            for grupo in zonas.values()
+        ]
+        if sin_zona:
+            resultado.append({"id": False, "nombre": _("Sin zona"), "pedidos": sin_zona})
+        return resultado
+
     # === Modo Cobro === #
 
     @api.model
@@ -1426,10 +1545,12 @@ class DuranCaptura(models.AbstractModel):
         precio = producto.precio_por_kg if producto.es_peso_variable else producto.lst_price
         sufijo_precio = self._sufijo_precio(producto, uom_unidad)
         variante = producto.product_template_attribute_value_ids._get_combination_name()
+        uom_kg = self.env.ref("uom.product_uom_kgm", raise_if_not_found=False)
         return {
             "id": producto.id,
             "nombre": f"{producto.name} {variante}" if variante else producto.name,
             "unidad": unidad,
+            "por_kg": producto.uom_id == uom_kg,  # se vende por kg (no depende del nombre de la unidad)
             "es_peso_variable": producto.es_peso_variable,
             "precio": precio,
             "precio_texto": self._formato_precio(precio, currency) + sufijo_precio,

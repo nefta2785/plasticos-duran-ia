@@ -111,6 +111,27 @@ class TestPaginaYRutas(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
 
     # === Catálogo === #
 
+    def test_catalogo_por_kg(self):
+        """ `por_kg` sale de la unidad estándar kg de Odoo (no de su nombre):
+        verdadero en lo que se vende por kg, se pese o no; falso en piezas y en
+        los rollos (se pesan, pero se venden por pieza). """
+        kg_suelto = self._plantilla(
+            "KG suelto prueba", uom_id=self.env.ref("uom.product_uom_kgm").id,
+            es_peso_variable=True, precio_por_kg=70.0,
+        ).product_variant_id
+        self._entrar(self.usuario_captura)
+        productos = {p["id"]: p for c in self._resultado("/captura/api/catalogo") for p in c["productos"]}
+        casos = {
+            self.por_kilo: (True, False, "kg"),
+            kg_suelto: (True, True, "kg"),
+            self.normal: (False, False, "c/u"),
+            self.pv_con_precio: (False, True, "c/u"),
+        }
+        for producto, esperado in casos.items():
+            with self.subTest(producto=producto.name):
+                p = productos[producto.id]
+                self.assertEqual((p["por_kg"], p["es_peso_variable"], p["unidad"]), esperado)
+
     def test_catalogo(self):
         self._entrar(self.usuario_captura)
         catalogo = self._resultado("/captura/api/catalogo")

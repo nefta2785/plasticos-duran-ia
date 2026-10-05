@@ -8,19 +8,21 @@ async function pasoInicio() {
     check("Inicio: sin INICIO (ya está en el Inicio), la fila de Salir sí se ve", [q("#btn-inicio").hidden, q("#barra-botones").hidden], [true, false]);
     check("Inicio: pregunta", txt(".pregunta"), "¿Qué vas a hacer?");
     check(
-        "Inicio: tres modos, Pedido, Entrega y Cobro",
+        "Inicio: cuatro modos, Pedido, Entrega, Cobro y Acomodo de entregas",
         qa(".btn-modo").map((b) => [b.querySelector(".modo-nombre").textContent, b.querySelector(".modo-detalle").textContent]),
         [
             ["Pedido", "Levantar un pedido nuevo"],
             ["Entrega", "Entregar lo que ya pidieron"],
             ["Cobro", "Cobrar lo entregado y lo pendiente"],
+            ["Acomodo de entregas", "En qué orden acomodar el carrito"],
         ]
     );
+    checkCuatroModosSinDeslizar("Inicio (administrador)");
     check("Inicio: sin barra de pedido ni pestañas", [q("#barra-pedido").hidden, q("#categorias").hidden], [true, true]);
     check(
-        "Inicio: los tres modos habilitados",
-        [modo("Pedido").disabled, modo("Entrega").disabled, modo("Cobro").disabled],
-        [false, false, false]
+        "Inicio: los cuatro modos habilitados",
+        [modo("Pedido").disabled, modo("Entrega").disabled, modo("Cobro").disabled, modo("Acomodo de entregas").disabled],
+        [false, false, false, false]
     );
     check("Inicio: no llama al servidor", llamadas.length, 0);
     checkAncho("Inicio");
@@ -77,7 +79,18 @@ async function pasoProductos() {
         ["Blanca #2", "$70/kg"]
     );
     check("Productos: precio c/u", tarjeta(409).querySelector(".producto-precio").textContent, "$325 c/u");
-    check("Productos: sin cantidad no hay − 1 ni Quitar", tarjeta(440).querySelectorAll(".btn-restar,.btn-quitar").length, 0);
+    check(
+        "Productos sin cantidad: solo un «+» redondo de 64 x 64, sin «−» ni número",
+        [txt('[data-producto="440"] .producto-mas'), medida(botonMas(440)), getComputedStyle(botonMas(440)).borderTopWidth, botonMenos(440), cantidad(440)],
+        ["+", [64, 64], "3px", null, null]
+    );
+    check("La tarjeta no es un botón: solo «+» y «−» lo son", [tarjeta(440).closest("button"), tarjeta(440).querySelectorAll("button").length], [null, 1]);
+    for (const parte of [".producto-nombre", ".producto-precio", ".producto-fila"]) {
+        tarjeta(440).querySelector(parte).click();
+    }
+    tarjeta(440).click();
+    await espera(10);
+    check("Tocar el nombre, el precio o la tarjeta no suma nada", [cantidad(440), txt("#pedido-conteo")], [null, "Pedido vacío"]);
     check("Productos: pedido vacío, botón de abajo deshabilitado", [txt("#pedido-conteo"), q("#btn-pedido").disabled], ["Pedido vacío", true]);
     check("Pedido vacío: recargar no pregunta", pideConfirmarAlSalir(), false);
 
@@ -85,37 +98,67 @@ async function pasoProductos() {
     check("3 toques = 3 kg", cantidad(440), "3 kg");
     check("Con pedido: recargar la página pregunta antes", pideConfirmarAlSalir(), true);
     check(
-        "Con cantidad aparecen − 1 y Quitar",
-        [...tarjeta(440).querySelectorAll(".producto-controles .btn")].map((b) => b.textContent),
-        ["− 1", "✕ Quitar"]
+        "Con cantidad: fila [ − ] 3 kg [ + ], sin «Quitar» ni etiqueta arriba",
+        [
+            [...tarjeta(440).querySelectorAll(".producto-cantidades > *")].map((e) => e.textContent),
+            tarjeta(440).classList.contains("con-cantidad"),
+            q('[data-producto="440"] .producto-fila button'),
+            /Quitar/.test(tarjeta(440).textContent),
+        ],
+        [["−", "3 kg", "+"], true, null, false]
+    );
+    check(
+        "Botones «−» y «+» de 72 x 60 (al menos 64 x 56), contorno de 3 px, número de 28 px",
+        [medida(botonMenos(440)), medida(botonMas(440)), getComputedStyle(botonMas(440)).borderTopWidth, getComputedStyle(q('[data-producto="440"] .producto-cantidad-texto')).fontSize],
+        [[72, 60], [72, 60], "3px", "28px"]
+    );
+    check(
+        "Botones con nombre para el lector de pantalla",
+        [botonMenos(440).getAttribute("aria-label"), botonMas(440).getAttribute("aria-label")],
+        ["Quitar 1 a Blanca #2", "Agregar 1 a Blanca #2"]
     );
     check("Indicador suma cantidades: 3 kg = 3 productos", txt("#pedido-conteo"), "3 productos en el pedido");
     check("Pestaña suma cantidades", txt('.categoria[aria-selected="true"] .categoria-conteo'), "3");
 
-    tarjeta(440).querySelector(".btn-restar").click();
-    await espera(10);
-    check("− 1: 2 kg", cantidad(440), "2 kg");
+    await restarProducto(440);
+    check("«−»: 2 kg", cantidad(440), "2 kg");
     await tocarProducto(409, 2);
     check("Piezas: 2 c/u", cantidad(409), "2 c/u");
     check("Indicador: 2 kg + 2 c/u = 4 productos", txt("#pedido-conteo"), "4 productos en el pedido");
-    tarjeta(409).querySelector(".btn-restar").click();
+    await restarProducto(409);
+    check("«−» en 2 deja 1", cantidad(409), "1 c/u");
+    await restarProducto(409);
+    check(
+        "«−» en 1 lo saca del pedido, sin preguntar, y vuelve el «+» redondo",
+        [cantidad(409), txt("#pedido-conteo"), q("#modal").hidden, !!q('[data-producto="409"] .producto-mas')],
+        [null, "2 productos en el pedido", true, true]
+    );
+
+    // Toques rápidos: el «+» no se reemplaza bajo el dedo y no se pierde ninguno.
+    await tocarProducto(409, 1);
+    const mas = botonMas(409);
+    for (let i = 0; i < 9; i++) {
+        botonMas(409).click(); // sin esperar entre toques
+    }
     await espera(10);
-    tarjeta(409).querySelector(".btn-restar").click();
-    await espera(10);
-    check("Restar hasta 0 lo saca del pedido", [cantidad(409), txt("#pedido-conteo")], [null, "2 productos en el pedido"]);
-    await tocarProducto(409, 4);
-    tarjeta(409).querySelector(".btn-quitar").click();
-    await espera(10);
-    check("Quitar lo saca de golpe", [cantidad(409), txt("#pedido-conteo")], [null, "2 productos en el pedido"]);
+    check(
+        "10 toques seguidos dan 10, con el mismo botón «+»",
+        [cantidad(409), mas.isConnected, txt('.categoria[aria-selected="true"] .categoria-conteo'), txt("#pedido-conteo")],
+        ["10 c/u", true, "12", "12 productos en el pedido"]
+    );
+    await restarProducto(409, 10);
+    check("10 veces «−» lo saca otra vez", [cantidad(409), txt("#pedido-conteo")], [null, "2 productos en el pedido"]);
 
     pestana("Rollos").click();
     await espera(20);
     check("Cambiar de pestaña muestra sus productos", qa(".producto-nombre").map((e) => e.textContent), ["Estrella 25x35"]);
-    await tocarProducto(464, 2);
+    await tocarProducto(464, 1);
+    check("Rollo en singular: 1 rollo", cantidad(464), "1 rollo");
+    await tocarProducto(464, 1);
     check(
-        "Peso variable: 2 c/u con precio $85/kg",
+        "Rollos en plural, con el precio por kg sin cambio",
         [cantidad(464), tarjeta(464).querySelector(".producto-precio").textContent],
-        ["2 c/u", "$85/kg"]
+        ["2 rollos", "$85/kg"]
     );
     pestana("Bolsas asa").click();
     await espera(20);
@@ -175,17 +218,19 @@ async function pasoLoDeSiempre() {
     check("Lo de siempre: sus productos en su orden", qa(".producto-nombre").map((e) => e.textContent), ["Estrella 25x35", "Blanca #2"]);
     check("Lo de siempre: mismo precio que el catálogo", tarjeta(440).querySelector(".producto-precio").textContent, "$70/kg");
     await tocarProducto(440, 2);
-    check("Lo de siempre: tocar suma igual que en el catálogo", cantidad(440), "2 kg");
+    check("Lo de siempre: «+» suma igual que en el catálogo", cantidad(440), "2 kg");
     check(
-        "Lo de siempre: también tiene − 1 y Quitar",
-        [...tarjeta(440).querySelectorAll(".producto-controles .btn")].map((b) => b.textContent),
-        ["− 1", "✕ Quitar"]
+        "Lo de siempre: misma fila [ − ] 2 kg [ + ], y el rollo con su «+» redondo",
+        [[...tarjeta(440).querySelectorAll(".producto-cantidades > *")].map((e) => e.textContent), !!q('[data-producto="464"] .producto-mas')],
+        [["−", "2 kg", "+"], true]
     );
+    tarjeta(440).querySelector(".producto-nombre").click();
+    await espera(10);
+    check("Lo de siempre: tocar el nombre no suma", cantidad(440), "2 kg");
     pestana("Bolsas asa").click();
     await espera(20);
     check("La misma cantidad se ve en su categoría", cantidad(440), "2 kg");
-    tarjeta(440).querySelector(".btn-restar").click();
-    await espera(10);
+    await restarProducto(440);
     pestana("⭐ Lo de siempre").click();
     await espera(20);
     check("Restar en la categoría se refleja en Lo de siempre", cantidad(440), "1 kg");
@@ -663,8 +708,13 @@ async function pasoEntregaAlgoMasYNada() {
     await espera(30);
     check("Algo más: INICIO con pedido también pregunta", txt("#modal-texto"), "¿Vaciar el pedido de Cliente con historial? Tiene 1 producto sin enviar.");
     await responderModal(false);
-    tarjeta(440).querySelector(".btn-quitar").click();
-    await espera(10);
+    check(
+        "Algo más: la misma tarjeta [ − ] 1 kg [ + ]",
+        [...tarjeta(440).querySelectorAll(".producto-cantidades > *")].map((e) => e.textContent),
+        ["−", "1 kg", "+"]
+    );
+    await restarProducto(440);
+    check("Algo más: «−» en 1 lo quita", [cantidad(440), txt("#pedido-conteo")], [null, "Pedido vacío"]);
     await regresar();
     check(
         "Regresar: vuelve a la entrega con lo capturado",
@@ -1008,12 +1058,194 @@ async function pasoHistorialLargo() {
     check("Y el siguiente INICIO va directo, sin respaldo", txt("#titulo"), "Captura");
 }
 
+// === Acomodo de entregas ===
+
+function checkCuatroModosSinDeslizar(pantalla) {
+    const ultimo = modo("Acomodo de entregas").getBoundingClientRect();
+    check(
+        `${pantalla}: los 4 botones caben sin deslizar (393 x 852)`,
+        [ultimo.bottom <= window.innerHeight, document.documentElement.scrollHeight <= window.innerHeight],
+        [true, true]
+    );
+}
+
+const renglonesAcomodo = (pedidoId) =>
+    qa(`[data-pedido="${pedidoId}"] .acomodo-producto`).map((r) => [
+        r.querySelector(".acomodo-producto-nombre").textContent,
+        r.querySelector(".acomodo-cantidad").textContent,
+    ]);
+
+async function pasoAcomodo() {
+    await irAInicio();
+    const antes = llamadasA("acomodo");
+    modo("Acomodo de entregas").click();
+    await espera(80);
+    check(
+        "Acomodo: título, sin subtítulo, sin barra de abajo ni pestañas",
+        [txt("#titulo"), q("#subtitulo").hidden, q("#barra-pedido").hidden, q("#categorias").hidden],
+        ["Acomodo de entregas", true, true, true]
+    );
+    check("Acomodo: abre directo, pidiendo los datos al servidor", llamadasA("acomodo"), antes + 1);
+    checkInicio("Acomodo de entregas");
+    check(
+        "Acomodo: un encabezado grande por zona, en el orden del servidor",
+        qa(".acomodo-zona-nombre").map((e) => e.textContent),
+        ["Bosques", "Tianguis Mercado Jardines de la Montaña Poniente", "Sin zona"]
+    );
+    check(
+        "Acomodo: en cada zona, las etiquetas Producto y Cantidad",
+        qa(".acomodo-columnas").map((e) => [...e.children].map((c) => c.textContent)),
+        [["Producto", "Cantidad"], ["Producto", "Cantidad"], ["Producto", "Cantidad"]]
+    );
+    check(
+        "Acomodo: la posición reinicia en 1 en cada zona",
+        qa(".acomodo-zona").map((z) => [...z.querySelectorAll(".acomodo-posicion")].map((e) => e.textContent)),
+        [["1", "2", "3", "4", "5", "6"], ["1"], ["1"]]
+    );
+    check(
+        "Acomodo: clientes en el orden de llegada (un cliente que vuelve a pedir sale otra vez)",
+        [...qa(".acomodo-zona")[0].querySelectorAll(".acomodo-cliente-nombre")].map((e) => e.textContent),
+        ["Doña Carmen", "Tortillería La Guadalupana de Doña Lupita", "<b>Cliente con HTML</b>", "Doña Carmen", "Cliente con historial", "Don Beto"]
+    );
+    check("Acomodo: un nombre con HTML se muestra como texto", qa(".acomodo-pedido b").length, 0);
+    check(
+        "Acomodo: renglones del pedido con su cantidad (rollos por pieza, sin peso)",
+        renglonesAcomodo(60),
+        [["Blanca #2", "5 kg"], ["Estrella 25x35", "2 rollos"], ["Caja 25x35 (5kg)", "2 c/u"]]
+    );
+    check(
+        "Acomodo: lo que se pesa pero se vende por kg dice kg; un rollo normal, rollos",
+        renglonesAcomodo(65),
+        [["Caja 25x35 (5kg)", "1 c/u"], ["Hoja polipapel 25x35 (KG suelto)", "3 kg"], ["Estrella 25x35", "3 rollos"]]
+    );
+    check("Acomodo: un rollo en singular y decimales como en Entrega", [renglonesAcomodo(62), renglonesAcomodo(61)[0][1]], [[["Estrella 25x35", "1 rollo"]], "1.5 kg"]);
+    check("Acomodo: sin totales ni precios", [/total/i.test(txt("#contenido")), txt("#contenido").includes("$")], [false, false]);
+    const cantidad = q('[data-pedido="60"] .acomodo-cantidad');
+    const nombre = q('[data-pedido="60"] .acomodo-producto-nombre');
+    check(
+        "Acomodo: cantidad a la derecha, más grande y en negritas que el producto",
+        [
+            cantidad.getBoundingClientRect().right > nombre.getBoundingClientRect().right,
+            parseFloat(getComputedStyle(cantidad).fontSize) > parseFloat(getComputedStyle(nombre).fontSize),
+            Number(getComputedStyle(cantidad).fontWeight) >= 700,
+            Number(getComputedStyle(q(".acomodo-cliente-nombre")).fontWeight) >= 700,
+        ],
+        [true, true, true, true]
+    );
+    checkAncho("Acomodo con nombres largos");
+    window.scrollTo(0, 400);
+    await espera(30);
+    check(
+        "Acomodo: al deslizar, el nombre de la zona se queda pegado bajo la barra",
+        Math.abs(qa(".acomodo-zona-nombre")[0].getBoundingClientRect().top - q(".barra").getBoundingClientRect().bottom) <= 1,
+        true
+    );
+    checkInicio("Acomodo de entregas, deslizada");
+
+    await regresar();
+    check("Acomodo: Regresar vuelve al Inicio", txt("#titulo"), "Captura");
+    modo("Acomodo de entregas").click();
+    await espera(80);
+    check("Acomodo: al volver a abrir pide datos frescos (sin botón Actualizar)", [llamadasA("acomodo"), !!boton("Actualizar")], [antes + 2, false]);
+    await tocarInicio();
+    check("Acomodo: INICIO vuelve al Inicio", [txt("#titulo"), history.state.nivel], ["Captura", 0]);
+
+    modoAcomodo = "vacio";
+    modo("Acomodo de entregas").click();
+    await espera(80);
+    check(
+        "Acomodo sin pedidos: mensaje claro y grande",
+        [txt(".aviso-grande"), parseFloat(getComputedStyle(q(".aviso-grande")).fontSize) >= 24, qa(".acomodo-zona").length],
+        ["Hoy no hay pedidos pendientes de entregar.", true, 0]
+    );
+    await tocarInicio();
+
+    modoAcomodo = "sin-red";
+    modo("Acomodo de entregas").click();
+    await espera(80);
+    check("Acomodo sin señal: mensaje y botón para reintentar", [txt(".aviso"), !!boton("Intentar de nuevo")], ["No hay conexión. Revisa la señal e intenta de nuevo.", true]);
+    boton("Intentar de nuevo").click();
+    await espera(80);
+    check("Acomodo: Intentar de nuevo carga la lista", qa(".acomodo-zona").length, 3);
+    await tocarInicio();
+}
+
+// === Tarjetas con cantidades grandes y nombres largos ===
+
+function checkTarjetaSinEncimarse(id, pantalla) {
+    // Dentro de la tarjeta y sin encimarse: [ − ] número [ + ], y el nombre arriba.
+    const t = tarjeta(id).getBoundingClientRect();
+    const menos = botonMenos(id).getBoundingClientRect();
+    const mas = botonMas(id).getBoundingClientRect();
+    const numero = q(`[data-producto="${id}"] .producto-cantidad-texto`);
+    const n = numero.getBoundingClientRect();
+    const nombre = q(`[data-producto="${id}"] .producto-nombre`).getBoundingClientRect();
+    check(
+        `Sin encimarse a 393 x 852: ${pantalla}`,
+        [
+            menos.left >= t.left && mas.right <= t.right,
+            menos.right <= n.left && n.right <= mas.left,
+            numero.scrollWidth <= numero.clientWidth,
+            nombre.bottom <= Math.min(menos.top, mas.top) && nombre.right <= t.right,
+        ],
+        [true, true, true, true]
+    );
+}
+
+async function pasoTarjetasGrandes() {
+    await irAInicio();
+    modo("Pedido").click();
+    await espera(80);
+    boton("Bosques").click();
+    await espera(80);
+    boton("Doña Carmen").click();
+    await espera(120);
+    await tocarProducto(472, 3);
+    check(
+        "KG suelto (se pesa, pero se vende por kg): «3 kg», con su precio por kg",
+        [cantidad(472), tarjeta(472).querySelector(".producto-precio").textContent],
+        ["3 kg", "$70/kg"]
+    );
+    pestana("Rollos").click();
+    await espera(20);
+    await tocarProducto(464, 3);
+    check("Un rollo normal sigue diciendo «3 rollos»", cantidad(464), "3 rollos");
+    await restarProducto(464, 3);
+    pestana("Bolsas asa").click();
+    await espera(20);
+    await restarProducto(472, 3);
+    for (let i = 0; i < 999; i++) {
+        botonMas(409).click();
+    }
+    await espera(10);
+    check("999 toques: 999 c/u, con la pestaña y la barra al día", [cantidad(409), txt('.categoria[aria-selected="true"] .categoria-conteo'), txt("#pedido-conteo")], ["999 c/u", "999", "999 productos en el pedido"]);
+    // El catálogo de prueba no tiene nombres largos: se alarga el de la tarjeta
+    // para revisar cómo se acomoda.
+    q('[data-producto="409"] .producto-nombre').textContent = "Bolsa de basura jumbo negra extra gruesa 90x120 calibre 300";
+    checkTarjetaSinEncimarse(409, "nombre largo y 999 c/u");
+    pestana("Rollos").click();
+    await espera(20);
+    for (let i = 0; i < 999; i++) {
+        botonMas(464).click();
+    }
+    await espera(10);
+    check("999 toques en un rollo: 999 rollos", cantidad(464), "999 rollos");
+    q('[data-producto="464"] .producto-nombre').textContent = "Bolsa de basura 90x120";
+    checkTarjetaSinEncimarse(464, "Bolsa de basura 90x120 y 999 rollos");
+    checkAncho("tarjetas con 999");
+    q("#btn-inicio").click();
+    await espera(30);
+    await responderModal(true);
+    check("Al salir con INICIO se vacía el pedido grande", [txt("#titulo"), pideConfirmarAlSalir()], ["Captura", false]);
+}
+
 // === Usuario de tianguis (sin data-salir en <body>) ===
 
 async function pasoTianguisSinSalir() {
     await espera(80);
     check("Tianguis: Inicio sin botón Salir", [txt("#titulo"), q("#btn-regresar").hidden, !!boton("‹ Salir")], ["Captura", true, false]);
     check("Tianguis: en Inicio la fila de botones no ocupa lugar", [q("#barra-botones").hidden, q("#btn-inicio").hidden], [true, true]);
+    checkCuatroModosSinDeslizar("Inicio de tianguis");
     checkAncho("Inicio de tianguis");
     q("#btn-regresar").click(); // aunque se tocara, no sale de la pantalla
     await espera(120);
@@ -1041,7 +1273,7 @@ const PASOS = [
     pasoResumen, pasoEnviar, pasoInicioConPedido, pasoEntregaClientes, pasoEntregaLista, pasoEntregaResumen,
     pasoEntregaConfirmar, pasoEntregaAlgoMasYNada,
     pasoCobroClientes, pasoCobroAvisos, pasoCobroDetalle, pasoCobroParte, pasoCobroEnviar, pasoCobroTodoYNada,
-    pasoHistorialLargo,
+    pasoHistorialLargo, pasoAcomodo, pasoTarjetasGrandes,
 ];
 
 window.addEventListener("load", async () => {

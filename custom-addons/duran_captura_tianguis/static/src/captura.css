@@ -253,18 +253,15 @@ button {
     background: var(--seleccion);
 }
 
-.producto-sumar {
+/* La tarjeta no es un botón: solo "+" y "−" cambian la cantidad (así no se
+   suma sin querer al deslizar la lista). */
+.producto-fila {
     display: flex;
     align-items: center;
     gap: 12px;
-    width: 100%;
     min-height: 72px;
-    padding: 10px 16px;
-    border: 0;
-    background: transparent;
-    text-align: left;
+    padding: 12px 16px;
 }
-.producto-sumar:active { background: #c9dbff; }
 
 .producto-textos { flex: 1; min-width: 0; }
 
@@ -272,6 +269,7 @@ button {
     display: block;
     font-size: 21px;
     font-weight: 700;
+    overflow-wrap: anywhere;
 }
 
 .producto-precio {
@@ -282,43 +280,35 @@ button {
     font-weight: 600;
 }
 
-.producto-cantidad {
-    flex: none;
-    min-width: 84px;
-    padding: 6px 10px;
-    border-radius: 10px;
-    font-size: 22px;
-    font-weight: 800;
-    text-align: center;
-}
-.producto.con-cantidad .producto-cantidad {
-    background: var(--primario);
-    color: var(--primario-texto);
-}
+/* Sin cantidad: "+" redondo y grande a la derecha. */
 .producto-mas {
     flex: none;
-    width: 52px;
-    height: 52px;
-    border: 2px solid var(--borde);
-    border-radius: 50%;
-    font-size: 30px;
-    font-weight: 700;
-    line-height: 46px;
-    text-align: center;
-}
-
-.producto-controles {
     display: flex;
-    gap: 10px;
-    padding: 0 12px 12px;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    padding: 0;
+    border: 3px solid var(--borde);
+    border-radius: 50%;
+    background: var(--fondo);
+    color: var(--texto);
+    font-size: 36px;
+    font-weight: 800;
 }
-.producto-controles .btn {
-    min-height: 56px;
+.producto-mas:active { background: var(--seleccion); }
+
+/* Con cantidad: [ − ] cantidad [ + ], como en Entrega (.cantidad-controles). */
+.producto-cantidades { padding: 0 16px 14px; }
+.producto-cantidades .btn { border-width: 3px; font-weight: 800; }
+.producto-cantidad-texto {
+    flex: 1;
+    min-width: 0;
+    font-size: 28px;
+    font-weight: 800;
     text-align: center;
-    font-size: 20px;
+    white-space: nowrap;
 }
-.btn-restar { flex: 1; }
-.btn-quitar { flex: 1; color: var(--peligro); border-color: var(--peligro); }
 
 .golpe { animation: golpe 180ms ease-out; }
 @keyframes golpe {
@@ -659,4 +649,97 @@ button {
     font-size: 28px;
     font-weight: 800;
     color: var(--peligro);
+}
+
+/* === Acomodo de entregas (solo lectura) === */
+
+.aviso-grande { margin: 48px 0; font-size: 26px; }
+
+.acomodo-zona { margin-bottom: 24px; }
+
+/* El nombre de la zona se queda pegado bajo la barra al deslizar. */
+.acomodo-zona-nombre {
+    position: sticky;
+    top: var(--alto-barra, 70px);        /* captura.js la ajusta a la barra real */
+    z-index: 8;
+    margin: 0 -16px;
+    padding: 10px 16px;
+    background: var(--texto);
+    color: var(--fondo);
+    font-size: 28px;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.acomodo-columnas {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0 4px;
+    border-bottom: 2px solid var(--borde);
+    color: var(--texto-suave);
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.acomodo-pedidos,
+.acomodo-productos {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.acomodo-pedido {
+    padding: 14px 0;
+    border-bottom: 2px solid var(--separador);
+}
+
+.acomodo-cliente {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.acomodo-posicion {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--primario);
+    color: var(--primario-texto);
+    font-size: 22px;
+    font-weight: 800;
+}
+
+.acomodo-cliente-nombre {
+    min-width: 0;
+    font-size: 22px;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.acomodo-producto {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0 6px 56px;             /* alineado con el nombre del cliente */
+}
+
+.acomodo-producto-nombre {
+    min-width: 0;
+    font-size: 20px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.acomodo-cantidad {
+    flex: none;
+    font-size: 24px;
+    font-weight: 800;
+    white-space: nowrap;
 }

@@ -1,7 +1,8 @@
 /* Captura tianguis. Inicio → modo Pedido (Zona → Cliente → Productos →
  * Resumen → Enviado, con el pedido en memoria), modo Entrega (Zona → Cliente
- * con entregas pendientes → Lo pendiente → Resumen → Entregado) o modo Cobro
- * (Zona → Cliente con algo por cobrar → Lo que debe → Confirmación → Cobrado).
+ * con entregas pendientes → Lo pendiente → Resumen → Entregado), modo Cobro
+ * (Zona → Cliente con algo por cobrar → Lo que debe → Confirmación → Cobrado)
+ * o Acomodo de entregas (solo lectura: los pedidos del día por zona).
  *
  * JavaScript sin frameworks. Los datos vienen de las rutas jsonrpc de
  * controllers/main.py. Todo texto que viene de Odoo se pinta con textContent
@@ -40,7 +41,7 @@
     const estado = {
         // "inicio" | "zonas" | "clientes" | "productos" | "resumen" | "enviado"
         // | "entrega" | "entrega-resumen" | "entregado"
-        // | "cobro" | "cobro-confirmar" | "cobrado"
+        // | "cobro" | "cobro-confirmar" | "cobrado" | "acomodo"
         pantalla: "inicio",
         modo: null, // "pedido" | "entrega" | "cobro"
         zona: null, // {id, nombre}
@@ -416,6 +417,8 @@
             dibujarConfirmarCobro();
         } else if (estado.pantalla === "cobrado") {
             dibujarCobrado();
+        } else if (estado.pantalla === "acomodo") {
+            dibujarAcomodo();
         } else {
             dibujarProductos();
         }
@@ -451,6 +454,9 @@
                 ),
                 botonModo("💵", "Cobro", "Cobrar lo entregado y lo pendiente", () =>
                     irA("zonas", { modo: "cobro", zona: null, cliente: null })
+                ),
+                botonModo("🛒", "Acomodo de entregas", "En qué orden acomodar el carrito", () =>
+                    irA("acomodo", { modo: null, zona: null, cliente: null })
                 ),
             ])
         );
@@ -645,59 +651,63 @@
     }
 
     function tarjetaProducto(producto) {
+        // La tarjeta no es un botón: solo "+" y "−" cambian la cantidad (tocar
+        // el nombre o deslizar la lista no suma nada).
         const cantidad = estado.pedido.get(producto.id) || 0;
-        const tarjeta = el("div", {
-            class: cantidad ? "producto con-cantidad" : "producto",
-            "data-producto": producto.id,
-        });
-        tarjeta.append(
-            el(
-                "button",
-                {
-                    type: "button",
-                    class: "producto-sumar",
-                    "aria-label": `Agregar 1 a ${producto.nombre}`,
-                    onclick: () => cambiarCantidad(producto, 1),
-                },
-                el(
-                    "span",
-                    { class: "producto-textos" },
-                    el("span", { class: "producto-nombre", text: producto.nombre }),
-                    el("span", { class: "producto-precio", text: producto.precio_texto })
-                ),
-                cantidad
-                    ? el("span", { class: "producto-cantidad", text: `${cantidad} ${producto.unidad}` })
-                    : el("span", { class: "producto-mas", "aria-hidden": "true", text: "+" })
-            )
+        const textos = el(
+            "span",
+            { class: "producto-textos" },
+            el("span", { class: "producto-nombre", text: producto.nombre }),
+            el("span", { class: "producto-precio", text: producto.precio_texto })
         );
-        if (cantidad) {
-            tarjeta.append(
-                el(
-                    "div",
-                    { class: "producto-controles" },
-                    el("button", {
-                        type: "button",
-                        class: "btn btn-restar",
-                        text: "− 1",
-                        "aria-label": `Restar 1 a ${producto.nombre}`,
-                        onclick: () => cambiarCantidad(producto, -1),
-                    }),
-                    el("button", {
-                        type: "button",
-                        class: "btn btn-quitar",
-                        text: "✕ Quitar",
-                        "aria-label": `Quitar ${producto.nombre} del pedido`,
-                        onclick: () => quitarProducto(producto),
-                    })
-                )
+        const sumar = (clase, texto) =>
+            el("button", {
+                type: "button",
+                class: clase,
+                text: texto,
+                "aria-label": `Agregar 1 a ${producto.nombre}`,
+                onclick: () => cambiarCantidad(producto, 1),
+            });
+        if (!cantidad) {
+            return el(
+                "div",
+                { class: "producto", "data-producto": producto.id },
+                el("div", { class: "producto-fila" }, textos, sumar("producto-mas", "+"))
             );
         }
-        return tarjeta;
+        return el(
+            "div",
+            { class: "producto con-cantidad", "data-producto": producto.id },
+            el("div", { class: "producto-fila" }, textos),
+            el(
+                "div",
+                { class: "cantidad-controles producto-cantidades" },
+                el("button", {
+                    type: "button",
+                    class: "btn btn-menos",
+                    text: "−",
+                    // En 1, "−" saca el producto del pedido.
+                    "aria-label": `Quitar 1 a ${producto.nombre}`,
+                    onclick: () => cambiarCantidad(producto, -1),
+                }),
+                el("span", { class: "producto-cantidad-texto", text: textoCantidad(producto, cantidad) }),
+                sumar("btn btn-mas", "+")
+            )
+        );
+    }
+
+    function textoCantidad(producto, cantidad) {
+        // Los rollos (se pesan al entregar, pero se venden por pieza) se cuentan
+        // por pieza: "1 rollo", "3 rollos". Lo que se vende por kg dice kg, se
+        // pese o no ("3 kg"); lo demás, con su unidad ("2 c/u").
+        const rollo = producto.es_peso_variable && !producto.por_kg;
+        return rollo ? plural(cantidad, "rollo", "rollos") : `${cantidad} ${producto.unidad}`;
     }
 
     function cambiarCantidad(producto, cambio) {
         // Siempre de 1 en 1 y siempre entero; en 0 el producto sale del pedido.
-        const cantidad = (estado.pedido.get(producto.id) || 0) + cambio;
+        const antes = estado.pedido.get(producto.id) || 0;
+        const cantidad = antes + cambio;
         if (cantidad > 0) {
             estado.pedido.set(producto.id, cantidad);
         } else {
@@ -707,13 +717,10 @@
             navigator.vibrate(15);
         }
         pedidoCambiado();
-        redibujarProducto(producto);
-    }
-
-    function quitarProducto(producto) {
-        estado.pedido.delete(producto.id);
-        pedidoCambiado();
-        redibujarProducto(producto);
+        // La tarjeta se cambia completa solo al entrar o salir del pedido; si no,
+        // solo el número, para que los botones no se reemplacen bajo el dedo y
+        // no se pierdan toques rápidos.
+        redibujarProducto(producto, !antes || !cantidad);
     }
 
     function pedidoCambiado() {
@@ -722,12 +729,18 @@
         estado.errorEnvio = null;
     }
 
-    function redibujarProducto(producto) {
+    function redibujarProducto(producto, completa) {
         const actual = ui.contenido.querySelector(`[data-producto="${producto.id}"]`);
-        if (actual) {
+        if (actual && completa) {
             const nueva = tarjetaProducto(producto);
             nueva.classList.add("golpe");
             actual.replaceWith(nueva);
+        } else if (actual) {
+            const numero = actual.querySelector(".producto-cantidad-texto");
+            numero.textContent = textoCantidad(producto, estado.pedido.get(producto.id));
+            numero.classList.remove("golpe");
+            void numero.offsetWidth; // reinicia la animación
+            numero.classList.add("golpe");
         }
         dibujarCategorias(false);
         actualizarPedido();
@@ -1909,6 +1922,76 @@
                     onclick: () => irA("zonas", { zona: null, cliente: null }),
                 }),
             ])
+        );
+    }
+
+    // =====================================================================
+    // === Acomodo de entregas (solo lectura) ===
+    // =====================================================================
+
+    // Los pedidos del día operativo con algo pendiente, por zona y en el orden
+    // en que se levantaron: el primero se entrega primero (va hasta arriba del
+    // carrito). Cada vez que se abre se piden datos frescos al servidor.
+    async function dibujarAcomodo() {
+        ponerTitulo("Acomodo de entregas");
+        const vista = nuevaVista();
+        mostrar(aviso("Cargando pedidos…"));
+        let zonas;
+        try {
+            zonas = await api("/captura/api/acomodo");
+        } catch (error) {
+            if (vigente(vista)) {
+                mostrarError(error, dibujarAcomodo);
+            }
+            return;
+        }
+        if (!vigente(vista)) {
+            return;
+        }
+        if (!zonas.length) {
+            mostrar(el("p", { class: "aviso aviso-grande", text: "Hoy no hay pedidos pendientes de entregar." }));
+            return;
+        }
+        mostrar(...zonas.map(seccionAcomodo));
+    }
+
+    function seccionAcomodo(zona) {
+        return el(
+            "section",
+            { class: "acomodo-zona" },
+            el("h2", { class: "acomodo-zona-nombre", text: zona.nombre }),
+            el(
+                "div",
+                { class: "acomodo-columnas", "aria-hidden": "true" },
+                el("span", { text: "Producto" }),
+                el("span", { text: "Cantidad" })
+            ),
+            el("ol", { class: "acomodo-pedidos" }, ...zona.pedidos.map(pedidoAcomodo))
+        );
+    }
+
+    function pedidoAcomodo(pedido) {
+        return el(
+            "li",
+            { class: "acomodo-pedido", "data-pedido": pedido.id },
+            el(
+                "div",
+                { class: "acomodo-cliente" },
+                el("span", { class: "acomodo-posicion", text: String(pedido.posicion) }),
+                el("span", { class: "acomodo-cliente-nombre", text: pedido.cliente })
+            ),
+            el(
+                "ul",
+                { class: "acomodo-productos" },
+                ...pedido.productos.map((producto) =>
+                    el(
+                        "li",
+                        { class: "acomodo-producto" },
+                        el("span", { class: "acomodo-producto-nombre", text: producto.nombre }),
+                        el("span", { class: "acomodo-cantidad", text: textoCantidad(producto, producto.cantidad) })
+                    )
+                )
+            )
         );
     }
 
