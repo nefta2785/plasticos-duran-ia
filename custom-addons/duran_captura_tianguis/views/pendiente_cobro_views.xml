@@ -1,74 +1,66 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Pendiente de cobro: lo entregado (un renglón por movimiento), por zona
-         y cliente, con el importe de venta. No resta cobros ni suma saldos. -->
+    <!-- Pendiente de cobro: lo entregado hoy y el saldo anterior de cada
+         cliente (vista SQL duran.pendiente.cobro), por zona y cliente. -->
     <record id="pendiente_cobro_view_list" model="ir.ui.view">
-        <field name="name">stock.move.pendiente.cobro.list</field>
-        <field name="model">stock.move</field>
-        <field name="priority">100</field>
+        <field name="name">duran.pendiente.cobro.list</field>
+        <field name="model">duran.pendiente.cobro</field>
         <field name="arch" type="xml">
-            <list string="Pendiente de cobro" create="false" edit="false" delete="false" default_order="pedido, id">
+            <list string="Pendiente de cobro" create="false" edit="false" delete="false"
+                  default_order="orden_clave, id" decoration-danger="vencido">
+                <field name="tipo" column_invisible="True"/>
+                <field name="vencido" column_invisible="True"/>
                 <field name="es_peso_variable" column_invisible="True"/>
                 <field name="moneda_id" column_invisible="True"/>
+                <field name="zona_id"/>
                 <field name="cliente_id"/>
-                <field name="product_id"/>
-                <field name="cantidad_entregada"/>
-                <field name="unidad_producto_id" string="Unidad"/>
-                <field name="peso_real" string="Peso del rollo (kg)" optional="show" invisible="not es_peso_variable"/>
-                <field name="importe_entregado" sum="Total"/>
                 <field name="pedido" optional="show"/>
+                <field name="product_id"/>
+                <field name="cantidad"/>
+                <field name="unidad_producto_id"/>
+                <field name="peso_real" optional="show" invisible="not es_peso_variable"/>
+                <field name="pendiente_hoy" sum="Total"/>
+                <field name="saldo_anterior" sum="Total"/>
+                <field name="total" sum="Total"/>
+                <field name="fecha" invisible="tipo != 'saldo'"/>
+                <field name="dias_antiguedad" invisible="tipo != 'saldo'"/>
             </list>
         </field>
     </record>
 
     <record id="pendiente_cobro_view_search" model="ir.ui.view">
-        <field name="name">stock.move.pendiente.cobro.search</field>
-        <field name="model">stock.move</field>
-        <field name="priority">100</field>
+        <field name="name">duran.pendiente.cobro.search</field>
+        <field name="model">duran.pendiente.cobro</field>
         <field name="arch" type="xml">
             <search string="Pendiente de cobro">
                 <field name="cliente_id"/>
                 <field name="product_id"/>
                 <field name="zona_id"/>
                 <field name="pedido"/>
-                <!-- Sobre la fecha de validación (date del movimiento hecho), en
-                     la zona horaria de quien consulta. -->
-                <filter string="Hoy" name="hoy" domain="[('date', '&gt;=', 'today'), ('date', '&lt;', 'today +1d')]"/>
-                <filter string="Últimos 7 días" name="ultimos_7_dias" domain="[('date', '&gt;=', 'today -6d'), ('date', '&lt;', 'today +1d')]"/>
+                <filter string="Solo con saldo anterior" name="solo_saldo" domain="[('tipo', '=', 'saldo')]"/>
                 <group>
                     <filter string="Zona" name="agrupar_zona" context="{'group_by': 'zona_id'}"/>
                     <filter string="Cliente" name="agrupar_cliente" context="{'group_by': 'cliente_id'}"/>
-                    <filter string="Día de entrega" name="agrupar_dia" context="{'group_by': 'date:day'}"/>
                 </group>
             </search>
         </field>
     </record>
 
-    <!-- Entregado = misma regla que el modo Entrega (duran.captura,
-         _entregas_pendientes: salida a cliente, ligada a una venta, que no es
-         devolución), con el movimiento hecho. Los cancelados no entran. Lo
-         ya facturado (al cobrarlo en la app) tampoco: solo entra si a su línea
-         de venta le queda algo por facturar. -->
     <record id="pendiente_cobro_action" model="ir.actions.act_window">
         <field name="name">Pendiente de cobro</field>
-        <field name="res_model">stock.move</field>
+        <field name="res_model">duran.pendiente.cobro</field>
         <field name="view_mode">list</field>
         <field name="view_id" ref="pendiente_cobro_view_list"/>
         <field name="search_view_id" ref="pendiente_cobro_view_search"/>
         <field name="group_ids" eval="[Command.link(ref('sales_team.group_sale_manager'))]"/>
-        <field name="domain">[
-            ('picking_id.picking_type_code', '=', 'outgoing'),
-            ('location_dest_id.usage', '=', 'customer'),
-            ('picking_id.sale_id', '!=', False),
-            ('picking_id.return_id', '=', False),
-            ('state', '=', 'done'),
-            ('sale_line_id.qty_to_invoice', '&gt;', 0),
-        ]</field>
-        <field name="context">{'search_default_hoy': 1, 'search_default_agrupar_zona': 1, 'search_default_agrupar_cliente': 2}</field>
+        <!-- Sin dominio: la vista SQL ya tiene solo lo pendiente (borra el de la
+             versión anterior sobre stock.move). -->
+        <field name="domain" eval="False"/>
+        <field name="context">{'search_default_agrupar_zona': 1, 'search_default_agrupar_cliente': 2}</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">No hay entregas en estas fechas</p>
-            <p>Aquí aparece lo entregado, por zona y cliente, con su importe de venta.</p>
+            <p class="o_view_nocontent_smiling_face">No hay nada pendiente de cobro</p>
+            <p>Aquí aparece lo entregado hoy y el saldo anterior de cada cliente, por zona.</p>
         </field>
     </record>
 

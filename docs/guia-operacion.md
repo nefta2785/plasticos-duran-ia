@@ -190,3 +190,7 @@ flecha junto a la lupa) y escojan:
 
 Para volver a la vista normal, quiten los filtros con la **x** de la barra de búsqueda y dejen
 **Agrupar por › Producto**.
+
+## 9. Pendiente de cobro (para el papá)
+
+En **Ventas › Órdenes › Pendiente de cobro** se ve, por zona y cliente, **lo entregado hoy más los saldos anteriores** (facturas sin pagar, saldos a favor y entregas de otros días sin cobrar); un renglón en **rojo** es un saldo con **más de 7 días**, y el **Total a cobrar** de cada cliente es el mismo que muestra la pantalla de **Cobro** de la app.

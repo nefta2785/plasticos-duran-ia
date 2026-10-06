@@ -8,7 +8,6 @@ from odoo.exceptions import AccessError, ConcurrencyError, UserError
 from odoo.sql_db import db_connect
 from odoo.tests import HttpCase, tagged
 from odoo.tools import html2plaintext
-from odoo.tools.safe_eval import safe_eval
 
 from .common import GRUPO_CAPTURA, CapturaDatosPrueba, CapturaHttpMixin
 
@@ -251,9 +250,9 @@ class TestClienteNuevo(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertIn(
             cliente.id, [c["id"] for c in self._resultado("/captura/api/cobro/clientes", {"zona_id": self.zona.id})],
         )
-        accion = self.env.ref("duran_captura_tianguis.pendiente_cobro_action")
-        en_pendiente = self.env["stock.move"].search(safe_eval(accion.domain) + [("cliente_id", "=", cliente.id)])
-        self.assertEqual(en_pendiente.mapped("importe_entregado"), [30.0])
+        self.env.flush_all()
+        en_pendiente = self.env["duran.pendiente.cobro"].search([("cliente_id", "=", cliente.id)])
+        self.assertEqual(en_pendiente.mapped("pendiente_hoy"), [30.0])
 
         detalle = self._resultado("/captura/api/cobro/detalle", {"cliente_id": cliente.id, "zona_id": self.zona.id})
         self.assertEqual((detalle["total_a_cobrar"], detalle["puede_cobrar"]), (30.0, True))

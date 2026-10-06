@@ -1,6 +1,7 @@
-""" Pendiente de cobro (Ventas › Órdenes › Pendiente de cobro): lo entregado,
-un renglón por movimiento, con su importe de venta, por zona y cliente. """
-import uuid
+""" Pendiente de cobro (Ventas › Órdenes › Pendiente de cobro): vista SQL
+`duran.pendiente.cobro` con lo entregado hoy y el saldo anterior de cada
+cliente, por zona y cliente. El total de cada cliente debe ser el que muestra
+la app de Cobro. """
 from datetime import datetime, time, timedelta
 
 import pytz
@@ -11,202 +12,322 @@ from odoo.exceptions import AccessError
 from odoo.tests import HttpCase, tagged
 from odoo.tools.safe_eval import safe_eval
 
-from .common import GRUPO_CAPTURA, CapturaDatosPrueba, CapturaHttpMixin
+from ..models.pendiente_cobro import DIAS_SALDO_VENCIDO
+from .common import GRUPO_CAPTURA
+from .test_cobro_confirmar import CobroDatosPrueba
 
 ZONA_HORARIA = "America/Mexico_City"
-RUTA_PENDIENTE = "/captura/api/entrega/pendiente"
-RUTA_CONFIRMAR = "/captura/api/entrega/confirmar"
 COLUMNAS = [
-    "cliente_id", "product_id", "cantidad_entregada", "unidad_producto_id", "peso_real", "importe_entregado", "pedido",
+    "zona_id", "cliente_id", "pedido", "product_id", "cantidad", "unidad_producto_id", "peso_real",
+    "pendiente_hoy", "saldo_anterior", "total", "fecha", "dias_antiguedad",
 ]
 
 
 @tagged("post_install", "-at_install")
-class TestPendienteCobro(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
+class TestPendienteCobro(CobroDatosPrueba, HttpCase):
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls._sin_gastar_folios()
-        cls._crear_datos_captura()
         env = cls.env
-        cls.mama = cls._usuario("pendiente_cobro_mama", GRUPO_CAPTURA)
         cls.papa = cls._usuario("pendiente_cobro_papa", "sales_team.group_sale_manager")
         cls.admin = cls._usuario("pendiente_cobro_admin", "base.group_system,sales_team.group_sale_manager")
         cls.vendedor = cls._usuario("pendiente_cobro_vendedor", "sales_team.group_sale_salesman")
-        (cls.mama | cls.papa | cls.admin).tz = ZONA_HORARIA
         cls.accion = env.ref("duran_captura_tianguis.pendiente_cobro_action")
         cls.menu = env.ref("duran_captura_tianguis.pendiente_cobro_menu")
-        sin_impuestos = {"taxes_id": [Command.clear()]}
-        cls.pieza = cls._plantilla("Pieza pendiente cobro", list_price=10.0, **sin_impuestos).product_variant_id
+        facturable = {"invoice_policy": "delivery", "taxes_id": [Command.clear()]}
         cls.kilo = cls._plantilla(
-            "Kilo pendiente cobro", uom_id=env.ref("uom.product_uom_kgm").id, **sin_impuestos,
-        ).product_variant_id
-        cls.rollo = cls._plantilla(
-            "Rollo pendiente cobro", es_peso_variable=True, precio_por_kg=80.0, **sin_impuestos,
+            "Kilo pendiente cobro", uom_id=env.ref("uom.product_uom_kgm").id, **facturable,
         ).product_variant_id
         cls.zona_b = env["res.partner.category"].create({"name": "Zona prueba pendiente B"})
-        cls.cliente_b = cls._cliente("Cliente prueba pendiente B", cls.zona_b)
+        cls.hoy = fields.Date.context_today(env["res.partner"].with_context(tz=ZONA_HORARIA))
 
     # === Ayudantes === #
 
-    def _entregada(self, lineas, cliente=None, zona=None, pesos=(), **vals):
-        """ Orden confirmada y entregada completa. `zona=False`: sin zona. Los
-        rollos toman los `pesos` en orden. """
-        cliente = cliente or self.cliente
-        zona = self.zona_con_clientes if zona is None else zona
-        orden = self._confirmada(cliente, lineas, zona_id=zona.id if zona else False, **vals)
-        rollos = orden.picking_ids.move_ids.filtered("es_peso_variable").sorted("id")
-        for movimiento, peso in zip(rollos, pesos):
-            movimiento.peso_real = peso
-        self._validar(orden.picking_ids)
-        return orden
+    def _nuevo_cliente(self, nombre, zonas=None):
+        return self._cliente(nombre, zonas or self.zona_con_clientes)
 
     def _movimientos(self, orden):
         return orden.picking_ids.move_ids.filtered(lambda m: m.state == "done").sorted("id")
 
-    def _a_utc(self, dia, hora, minuto):
+    def _a_utc(self, dia, hora, minuto=0):
         local = pytz.timezone(ZONA_HORARIA).localize(datetime.combine(dia, time(hora, minuto)))
         return local.astimezone(pytz.utc).replace(tzinfo=None)
 
-    def _hoy_mexico(self):
-        return fields.Date.context_today(self.env["res.partner"].with_context(tz=ZONA_HORARIA))
+    def _entregada_el(self, dia, cliente, lineas, **kwargs):
+        orden = self._entregada(cliente, lineas, **kwargs)
+        self._movimientos(orden).date = self._a_utc(dia, 12)
+        return orden
 
-    def _filtro(self, nombre):
-        arch = etree.fromstring(self.env["stock.move"].get_views(
+    def _renglones(self, clientes, filtro=None):
+        """ Renglones que ve el gerente con `filtro`, solo de `clientes` (la
+        base puede tener datos reales). """
+        self.env.flush_all()
+        self.env.invalidate_all()
+        dominio = self._filtro(filtro) if filtro else []
+        return self.env["duran.pendiente.cobro"].with_user(self.papa).search(
+            dominio + [("cliente_id", "in", clientes.ids)],
+        )
+
+    def _filas(self, clientes, filtro=None):
+        return [
+            (r.tipo, r.pedido, r.cantidad, r.pendiente_hoy, r.saldo_anterior, r.total, r.fecha or None,
+             r.dias_antiguedad if r.tipo == "saldo" else None)
+            for r in self._renglones(clientes, filtro)
+        ]
+
+    def _total(self, cliente):
+        return round(sum(self._renglones(cliente).mapped("total")), 2)
+
+    def _busqueda(self):
+        return etree.fromstring(self.env["duran.pendiente.cobro"].get_views(
             [(self.accion.search_view_id.id, "search")],
         )["views"]["search"]["arch"])
-        return safe_eval(arch.xpath(f"//filter[@name='{nombre}']/@domain")[0])
 
-    def _dominio(self, filtro="hoy"):
-        return safe_eval(self.accion.domain) + (self._filtro(filtro) if filtro else [])
+    def _filtro(self, nombre):
+        return safe_eval(self._busqueda().xpath(f"//filter[@name='{nombre}']/@domain")[0])
 
-    def _clientes_prueba(self):
-        return self.cliente | self.cliente_b
-
-    def _renglones(self, filtro="hoy"):
-        """ Movimientos que muestra el reporte con `filtro`, solo de los
-        clientes de la prueba (la base puede tener entregas reales). """
-        return self.env["stock.move"].with_user(self.papa).with_context(tz=ZONA_HORARIA).search(
-            self._dominio(filtro) + [("cliente_id", "in", self._clientes_prueba().ids)],
-        )
-
-    def _grupos(self, agrupar, filtro="hoy"):
-        grupos = self.env["stock.move"].with_user(self.papa).with_context(tz=ZONA_HORARIA).formatted_read_group(
-            self._dominio(filtro) + [("cliente_id", "in", self._clientes_prueba().ids)],
-            list(agrupar), ["importe_entregado:sum", "__count"],
+    def _grupos(self, clientes, agrupar):
+        self.env.flush_all()
+        grupos = self.env["duran.pendiente.cobro"].with_user(self.papa).formatted_read_group(
+            [("cliente_id", "in", clientes.ids)], list(agrupar),
+            ["pendiente_hoy:sum", "saldo_anterior:sum", "total:sum"],
         )
         return {
-            tuple(g[a][0] if isinstance(g[a], (list, tuple)) else g[a] for a in agrupar): g["importe_entregado:sum"]
+            tuple(g[a][0] if isinstance(g[a], (list, tuple)) else g[a] for a in agrupar):
+                (g["pendiente_hoy:sum"], g["saldo_anterior:sum"], g["total:sum"])
             for g in grupos
         }
 
-    # === Qué entra === #
+    # === Casos === #
 
-    def test_solo_lo_entregado_hoy(self):
-        hoy = self._hoy_mexico()
-        entregada = self._entregada([(self.pieza, 2, 10.0)])
-        # Pendiente (sin validar) y orden cancelada: no entran.
-        self._confirmada(self.cliente, [(self.pieza, 5, 10.0)], zona_id=self.zona_con_clientes.id)
-        cancelada = self._confirmada(self.cliente, [(self.pieza, 4, 10.0)], zona_id=self.zona_con_clientes.id)
-        cancelada._action_cancel()
-        # Parcial sin backorder: entra lo entregado (2), no lo cancelado (3).
-        parcial = self._confirmada(self.cliente, [(self.pieza, 5, 10.0)], zona_id=self.zona_con_clientes.id)
-        parcial.picking_ids.move_ids.write({"quantity": 2, "picked": True})
-        parcial.picking_ids.with_context(cancel_backorder=True)._action_done()
-        # Devolución validada de lo entregado hoy: no entra (no es neto).
+    def test_entrega_hoy_sin_deuda(self):
+        cliente = self._nuevo_cliente("Cliente pendiente solo hoy")
+        orden = self._entregada(cliente, [(self.pieza, 2, 10.0)], zona_id=self.zona_con_clientes.id)
+        self.assertEqual(self._filas(cliente), [("hoy", orden.name, 2.0, 20.0, 0.0, 20.0, None, None)])
+        renglon = self._renglones(cliente)
+        self.assertEqual((renglon.zona_id, renglon.stock_move_id), (self.zona_con_clientes, self._movimientos(orden)))
+        self.assertFalse(renglon.vencido)
+        self.assertFalse(self._renglones(cliente, "solo_saldo"))
+        self.assertEqual(self._total(cliente), self._detalle(cliente)["total_a_cobrar"])
+
+    def test_deuda_sin_entrega_hoy(self):
+        """ Aparece aunque hoy no tenga entrega; su zona sale de la orden
+        facturada. """
+        cliente = self._nuevo_cliente("Cliente pendiente solo deuda", self.zona_con_clientes | self.zona_b)
+        factura = self._facturada(cliente, 100.0, fecha=self.hoy - timedelta(days=3))
+        factura.invoice_line_ids.sale_line_ids.order_id.zona_id = self.zona_b
+        self.assertEqual(
+            self._filas(cliente), [("saldo", factura.name, 0.0, 0.0, 100.0, 100.0, self.hoy - timedelta(days=3), 3)],
+        )
+        self.assertEqual(self._renglones(cliente).zona_id, self.zona_b)
+        self.assertEqual(self._renglones(cliente, "solo_saldo"), self._renglones(cliente))
+        self.assertEqual(self._total(cliente), self._detalle(cliente)["total_a_cobrar"])
+
+    def test_pago_parcial_hoy(self):
+        """ Lo entregado hoy se factura al cobrar: sale de "Entregado hoy" y lo
+        que no pagó queda como saldo de la factura de hoy (0 días). """
+        cliente = self._nuevo_cliente("Cliente pendiente pago parcial")
+        anterior = self._facturada(cliente, 100.0, fecha=self.hace_10_dias)
+        orden = self._entregada(cliente, [(self.pieza, 3, 100.0)], zona_id=self.zona_con_clientes.id)
+        self.assertEqual(self._filas(cliente), [
+            ("hoy", orden.name, 3.0, 300.0, 0.0, 300.0, None, None),
+            ("saldo", anterior.name, 0.0, 0.0, 100.0, 100.0, self.hace_10_dias, 10),
+        ])
+        self.assertEqual(self._total(cliente), self._detalle(cliente)["total_a_cobrar"])
+        registro = self._registro(self._confirmar(cliente=cliente, tipo="parte", monto=250))
+        hoy = registro.invoice_ids
+        self.assertEqual(self._filas(cliente), [("saldo", hoy.name, 0.0, 0.0, 150.0, 150.0, self.hoy, 0)])
+        self.assertEqual(self._total(cliente), self._detalle(cliente)["total_a_cobrar"])
+        self.assertEqual(self._total(cliente), registro.saldo_pendiente)
+
+    def test_entrega_anterior_sin_cobrar(self):
+        """ Lo entregado otro día y no cobrado (sin facturar) es saldo, con la
+        fecha de su entrega. Una línea entregada en partes: lo de hoy en su
+        renglón y lo de antes como saldo. """
+        cliente = self._nuevo_cliente("Cliente pendiente entrega anterior")
+        hace_3 = self.hoy - timedelta(days=3)
+        antes = self._entregada_el(hace_3, cliente, [(self.pieza, 2, 10.0)], zona_id=self.zona_con_clientes.id)
+        partes = self._confirmada(
+            cliente, [(self.pieza, 5, 10.0)], vendedor=self.otro_vendedor, zona_id=self.zona_con_clientes.id,
+        )
+        primera_entrega = partes.picking_ids
+        primera_entrega.move_ids.write({"quantity": 2, "picked": True})
+        primera_entrega._action_done()  # deja los otros 3 en una entrega pendiente
+        backorder = partes.picking_ids - primera_entrega
+        self._movimientos(partes).date = self._a_utc(hace_3, 12)
+        self._validar(backorder)
+        self.assertEqual(
+            sorted(self._filas(cliente), key=lambda f: (f[0], f[1], f[2])),
+            sorted([
+                ("hoy", partes.name, 3.0, 30.0, 0.0, 30.0, None, None),
+                ("saldo", antes.name, 2.0, 0.0, 20.0, 20.0, hace_3, 3),
+                ("saldo", partes.name, 2.0, 0.0, 20.0, 20.0, hace_3, 3),
+            ], key=lambda f: (f[0], f[1], f[2])),
+        )
+        self.assertEqual(self._total(cliente), 70.0)
+        self.assertEqual(self._total(cliente), self._detalle(cliente)["total_a_cobrar"])
+
+    def test_saldo_a_favor(self):
+        cliente = self._nuevo_cliente("Cliente pendiente saldo a favor")
+        factura = self._facturada(cliente, 30.0, fecha=self.hace_10_dias)
+        nota = self._nota_de_credito(cliente, 7.0)
+        pago = self._pago_sin_aplicar(cliente, 4.0)
+        self.assertEqual(
+            sorted((r.pedido, r.saldo_anterior, r.zona_id) for r in self._renglones(cliente)),
+            sorted([
+                (factura.name, 30.0, self.zona_con_clientes),
+                (nota.name, -7.0, self.zona_con_clientes),
+                (pago.move_id.name, -4.0, self.zona_con_clientes),
+            ]),
+        )
+        self.assertEqual(self._total(cliente), 19.0)
+        self.assertEqual(self._total(cliente), self._detalle(cliente)["total_a_cobrar"])
+        # Cliente con dos zonas y saldo sin orden: sin zona.
+        dos_zonas = self._nuevo_cliente("Cliente pendiente dos zonas", self.zona_con_clientes | self.zona_b)
+        self._nota_de_credito(dos_zonas, 5.0)
+        self.assertFalse(self._renglones(dos_zonas).zona_id)
+
+    def test_cliente_con_direccion_hija(self):
+        """ Lo de sus direcciones va al cliente principal: un solo grupo. """
+        cliente = self._nuevo_cliente("Cliente pendiente con dirección")
+        direccion = self.env["res.partner"].create({
+            "name": "Puesto pendiente cobro", "parent_id": cliente.id, "type": "other",
+        })
+        self._entregada(direccion, [(self.pieza, 2, 10.0)], zona_id=self.zona_con_clientes.id)
+        self._facturada(direccion, 50.0, fecha=self.hace_10_dias)
+        self._entregada(cliente, [(self.pieza, 1, 5.0)], zona_id=self.zona_con_clientes.id)
+        self.assertEqual(self._renglones(cliente | direccion).cliente_id, cliente)
+        self.assertEqual(self._grupos(cliente | direccion, ("cliente_id",)), {(cliente.id,): (25.0, 50.0, 75.0)})
+        self.assertEqual(self._total(cliente), self._detalle(cliente)["total_a_cobrar"])
+
+    def test_total_coincide_con_la_app_de_cobro(self):
+        """ Todo junto: rollo, descuento, kilos con centavos, entrega anterior,
+        factura con pago parcial, nota de crédito y una devolución de hoy. """
+        cliente = self._nuevo_cliente("Cliente pendiente todo junto")
+        zona = {"zona_id": self.zona_con_clientes.id}
+        self._entregada(cliente, [(self.rollo, 1)], pesos=[1.237], **zona)
+        con_descuento = self._entregada(cliente, [(self.pieza, 3, 12.5)], **zona)
+        con_descuento.order_line.discount = 10.0
+        self._entregada(cliente, [(self.kilo, 1.5, 33.33)], **zona)
+        self._entregada_el(self.hoy - timedelta(days=2), cliente, [(self.otra_pieza, 4, 7.25)], **zona)
+        factura = self._facturada(cliente, 80.0, fecha=self.hace_10_dias)
+        self.env["account.payment.register"].with_context(
+            active_model="account.move", active_ids=factura.ids,
+        ).create({"amount": 30.0, "journal_id": self.efectivo.id})._create_payments()
+        self._nota_de_credito(cliente, 3.5)
+        devuelta = self._entregada(cliente, [(self.pieza, 2, 10.0)], **zona)
         asistente = self.env["stock.return.picking"].with_context(
-            active_id=entregada.picking_ids.id, active_model="stock.picking",
+            active_id=devuelta.picking_ids.id, active_model="stock.picking",
         ).create({})
         asistente.product_return_moves.quantity = 1
         self._validar(asistente._create_return())
-        # Entregado ayer.
-        ayer = self._entregada([(self.pieza, 7, 10.0)])
-        self._movimientos(ayer).date = self._a_utc(hoy - timedelta(days=1), 12, 0)
-
-        renglones = self._renglones()
+        detalle = self._detalle(cliente)
+        self.assertEqual(self._total(cliente), detalle["total_a_cobrar"])
+        renglones = self._renglones(cliente)
         self.assertEqual(
-            sorted((m.sale_line_id.order_id, m.cantidad_entregada, m.importe_entregado) for m in renglones),
-            sorted([(entregada, 2.0, 20.0), (parcial, 2.0, 20.0)]),
+            round(sum(renglones.mapped("pendiente_hoy")) + sum(renglones.mapped("saldo_anterior")), 2),
+            detalle["total_a_cobrar"],
         )
-        self.assertIn(self._movimientos(ayer), self._renglones("ultimos_7_dias"))
-        self.assertTrue(all(m.state == "done" and m.location_dest_usage == "customer" for m in renglones))
 
-    def test_hoy_cerca_de_medianoche_en_mexico(self):
-        """ "Hoy" es el día en México, no en UTC: las 23:30 de hoy en México ya
-        son mañana en UTC, y las 23:30 de ayer ya son hoy en UTC. """
-        hoy = self._hoy_mexico()
-        noche = self._entregada([(self.pieza, 1, 10.0)])
-        madrugada = self._entregada([(self.pieza, 2, 10.0)])
-        anoche = self._entregada([(self.pieza, 3, 10.0)])
-        self._movimientos(noche).date = self._a_utc(hoy, 23, 30)
-        self._movimientos(madrugada).date = self._a_utc(hoy, 0, 10)
-        self._movimientos(anoche).date = self._a_utc(hoy - timedelta(days=1), 23, 30)
+    def test_hoy_es_el_dia_en_mexico(self):
+        """ Las 23:30 de hoy en México (ya mañana en UTC) son hoy; las 23:30 de
+        ayer (ya hoy en UTC) son saldo de ayer. """
+        cliente = self._nuevo_cliente("Cliente pendiente medianoche")
+        noche = self._entregada(cliente, [(self.pieza, 1, 10.0)], zona_id=self.zona_con_clientes.id)
+        anoche = self._entregada(cliente, [(self.pieza, 3, 10.0)], zona_id=self.zona_con_clientes.id)
+        self._movimientos(noche).date = self._a_utc(self.hoy, 23, 30)
+        self._movimientos(anoche).date = self._a_utc(self.hoy - timedelta(days=1), 23, 30)
+        self.assertEqual(self._movimientos(noche).date.date(), self.hoy + timedelta(days=1), "en UTC ya es mañana")
+        self.assertEqual(
+            sorted((r.tipo, r.pedido, r.fecha or None) for r in self._renglones(cliente)),
+            sorted([("hoy", noche.name, None), ("saldo", anoche.name, self.hoy - timedelta(days=1))]),
+        )
+
+    def test_rojo_con_mas_de_7_dias(self):
+        cliente = self._nuevo_cliente("Cliente pendiente antigüedad")
+        siete = self._facturada(cliente, 10.0, fecha=self.hoy - timedelta(days=DIAS_SALDO_VENCIDO))
+        ocho = self._facturada(cliente, 20.0, fecha=self.hoy - timedelta(days=DIAS_SALDO_VENCIDO + 1))
+        viejo = self._entregada_el(self.hoy - timedelta(days=30), cliente, [(self.pieza, 1, 5.0)])
+        hoy = self._entregada(cliente, [(self.pieza, 1, 5.0)])
+        self._movimientos(hoy).date = self._a_utc(self.hoy, 0, 5)
+        self.assertEqual(DIAS_SALDO_VENCIDO, 7)
+        self.assertEqual(
+            sorted((r.pedido, r.dias_antiguedad if r.tipo == "saldo" else None, r.vencido)
+                   for r in self._renglones(cliente)),
+            sorted([(siete.name, 7, False), (ocho.name, 8, True), (viejo.name, 30, True), (hoy.name, None, False)]),
+        )
+        arch = etree.fromstring(self.env["duran.pendiente.cobro"].with_user(self.papa).get_views(
+            [(self.accion.view_id.id, "list")],
+        )["views"]["list"]["arch"])
+        self.assertEqual(arch.get("decoration-danger"), "vencido")
+
+    def test_zona_de_respaldo_en_lo_entregado_hoy(self):
+        """ Orden de hoy sin zona y cliente con una sola zona: esa zona, y el
+        cliente queda en un solo grupo con sus saldos. Con dos zonas: sin zona. """
+        cliente = self._nuevo_cliente("Cliente pendiente orden sin zona", self.zona_b)
+        self._entregada(cliente, [(self.pieza, 2, 10.0)])
+        self._facturada(cliente, 15.0, fecha=self.hace_10_dias)
+        self._nota_de_credito(cliente, 4.0)
+        renglones = self._renglones(cliente)
+        self.assertEqual(sorted(renglones.mapped("tipo")), ["hoy", "saldo", "saldo"])
+        self.assertEqual(renglones.zona_id, self.zona_b)
+        self.assertEqual(self._grupos(cliente, ("zona_id", "cliente_id")), {(self.zona_b.id, cliente.id): (20.0, 11.0, 31.0)})
+        # Días de antigüedad en el encabezado del grupo: el máximo.
         self.env.flush_all()
-        self.assertEqual(self._movimientos(noche).date.date(), hoy + timedelta(days=1), "en UTC ya es mañana")
-        self.assertEqual(self._movimientos(anoche).date.date(), hoy, "en UTC ya es hoy")
-        self.assertEqual(
-            sorted(self._renglones().sale_line_id.order_id.ids), sorted((noche | madrugada).ids),
+        grupo = self.env["duran.pendiente.cobro"].with_user(self.papa).formatted_read_group(
+            [("cliente_id", "=", cliente.id)], ["cliente_id"], ["dias_antiguedad:max"],
         )
-
-    def test_varias_ordenes_del_mismo_cliente_el_mismo_dia(self):
-        primera = self._entregada([(self.pieza, 2, 10.0)])
-        segunda = self._entregada([(self.pieza, 1, 15.0)])
+        self.assertEqual(grupo[0]["dias_antiguedad:max"], 10)
+        # La orden con zona manda sobre la del cliente.
+        con_zona = self._entregada(cliente, [(self.pieza, 1, 5.0)], zona_id=self.zona_con_clientes.id)
         self.assertEqual(
-            [(m.pedido, m.importe_entregado) for m in self._renglones().sorted(lambda m: (m.pedido, m.id))],
-            sorted([(primera.name, 20.0), (segunda.name, 15.0)]),
+            self._renglones(cliente).filtered(lambda r: r.pedido == con_zona.name).zona_id, self.zona_con_clientes,
         )
-        self.assertEqual(self._grupos(("cliente_id",)), {(self.cliente.id,): 35.0})
+        # Cliente con dos zonas y orden sin zona: sin zona.
+        dos_zonas = self._nuevo_cliente("Cliente pendiente dos zonas hoy", self.zona_con_clientes | self.zona_b)
+        self._entregada(dos_zonas, [(self.pieza, 1, 10.0)])
+        self.assertEqual(self._renglones(dos_zonas).mapped("tipo"), ["hoy"])
+        self.assertFalse(self._renglones(dos_zonas).zona_id)
 
-    def test_lo_facturado_desaparece(self):
-        """ Lo ya facturado (en la operación: ya se cobró en la app) sale del
-        reporte; lo entregado sin facturar sigue. """
-        facturada = self._entregada([(self.pieza, 2, 10.0)])
-        sin_facturar = self._entregada([(self.pieza, 3, 10.0)])
-        self.assertEqual(self._renglones().sale_line_id.order_id, facturada | sin_facturar)
-        facturada._create_invoices().action_post()
-        self.assertEqual(facturada.order_line.qty_to_invoice, 0.0)
-        self.assertEqual(self._renglones().sale_line_id.order_id, sin_facturar)
-        self.assertEqual(self._grupos(("cliente_id",)), {(self.cliente.id,): 30.0})
+    def test_totales_por_zona_y_cliente(self):
+        uno = self._nuevo_cliente("Cliente pendiente total uno")
+        dos = self._nuevo_cliente("Cliente pendiente total dos", self.zona_b)
+        self._entregada(uno, [(self.pieza, 2, 10.0)], zona_id=self.zona_con_clientes.id)
+        self._facturada(uno, 15.0, fecha=self.hace_10_dias)
+        self._entregada(dos, [(self.pieza, 3, 10.0)], zona_id=self.zona_b.id)
+        self._nota_de_credito(dos, 4.0)
+        self.assertEqual(self._grupos(uno | dos, ("zona_id", "cliente_id")), {
+            (self.zona_con_clientes.id, uno.id): (20.0, 15.0, 35.0),
+            (self.zona_b.id, dos.id): (30.0, -4.0, 26.0),
+        })
+        self.assertEqual(self._grupos(uno | dos, ("zona_id",)), {
+            (self.zona_con_clientes.id,): (20.0, 15.0, 35.0), (self.zona_b.id,): (30.0, -4.0, 26.0),
+        })
 
-    # === Importe === #
+    # === Importe del movimiento (stock.move.importe_entregado) === #
 
     def test_importe_rollo_producto_normal_y_descuento(self):
-        normal = self._entregada([(self.pieza, 3, 10.0)])
-        con_descuento = self._entregada([(self.pieza, 3, 10.0)])
-        rollo = self._entregada([(self.rollo, 1)], pesos=[1.25])
-        rollo_descuento = self._entregada([(self.rollo, 1)], pesos=[1.25])
+        normal = self._entregada(self.cliente, [(self.pieza, 3, 10.0)])
+        con_descuento = self._entregada(self.cliente, [(self.pieza, 3, 10.0)])
+        rollo = self._entregada(self.cliente, [(self.rollo, 1)], pesos=[1.25])
+        rollo_descuento = self._entregada(self.cliente, [(self.rollo, 1)], pesos=[1.25])
         for orden in (con_descuento, rollo_descuento):
             orden.order_line.discount = 10.0
-        gramos = self.env.ref("uom.product_uom_gram")
-        self.kilo.product_tmpl_id.uom_ids = [Command.link(gramos.id)]
-        en_gramos = self._confirmada(self.cliente, [], zona_id=self.zona_con_clientes.id)
-        en_gramos.order_line = [Command.create({
-            "product_id": self.kilo.id, "product_uom_qty": 500, "product_uom_id": gramos.id, "price_unit": 0.1,
-        })]
-        self._validar(en_gramos.picking_ids)
-
         casos = {
-            "normal": (normal, 3.0, None, 30.0),
-            "normal con descuento": (con_descuento, 3.0, None, 27.0),
-            "rollo": (rollo, 1.0, 1.25, 100.0),
-            "rollo con descuento": (rollo_descuento, 1.0, 1.25, 90.0),
-            "vendido en gramos": (en_gramos, 0.5, None, 50.0),
+            "normal": (normal, 3.0, 30.0),
+            "normal con descuento": (con_descuento, 3.0, 27.0),
+            "rollo": (rollo, 1.0, 62.5),
+            "rollo con descuento": (rollo_descuento, 1.0, 56.25),
         }
-        for nombre, (orden, cantidad, peso, importe) in casos.items():
+        for nombre, (orden, cantidad, importe) in casos.items():
             with self.subTest(caso=nombre):
                 movimiento = self._movimientos(orden)
-                self.assertEqual(movimiento.cantidad_entregada, cantidad)
-                self.assertEqual(movimiento.peso_real if peso else None, peso)
-                self.assertEqual(movimiento.importe_entregado, importe)
-                self.assertEqual(movimiento.unidad_producto_id, movimiento.product_id.uom_id)
-        # Coincide con lo que factura Odoo.
-        for orden in (normal, con_descuento, rollo, rollo_descuento):
-            with self.subTest(factura=orden.name):
-                self.assertEqual(orden._create_invoices().amount_untaxed, self._movimientos(orden).importe_entregado)
+                self.assertEqual((movimiento.cantidad_entregada, movimiento.importe_entregado), (cantidad, importe))
+                self.assertEqual(orden._create_invoices().amount_untaxed, importe, "como lo factura Odoo")
 
     def test_importe_se_recalcula_si_cambia_precio_o_descuento(self):
-        orden = self._entregada([(self.pieza, 2, 10.0)])
+        orden = self._entregada(self.cliente, [(self.pieza, 2, 10.0)])
         movimiento = self._movimientos(orden)
         self.assertEqual(movimiento.importe_entregado, 20.0)
         orden.order_line.price_unit = 12.5
@@ -214,90 +335,60 @@ class TestPendienteCobro(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         orden.order_line.discount = 20.0
         self.assertEqual(movimiento.importe_entregado, 20.0)
 
-    def test_entrega_desde_la_app_con_usuario_de_captura(self):
-        """ La mamá (solo grupo Captura) entrega desde la app: el importe se
-        calcula aunque ella no pueda leerlo. """
-        orden = self._confirmada(self.cliente, [(self.pieza, 3, 10.0)], zona_id=self.zona_con_clientes.id)
-        self._entrar(self.mama)
-        pendiente = self._resultado(RUTA_PENDIENTE, {"cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id})
-        self._resultado(RUTA_CONFIRMAR, {
-            "cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id, "rollos": [],
-            "productos": [{"producto_id": self.pieza.id, "cantidad": 2}],
-            "movimientos_vistos": [m["move_id"] for p in pendiente["productos"] for m in p["movimientos"]],
-            "token": uuid.uuid4().hex,
-        })
-        movimiento = self._movimientos(orden)
-        self.assertEqual((movimiento.cantidad_entregada, movimiento.importe_entregado), (2.0, 20.0))
-        self.assertIn(movimiento, self._renglones())
-
-    # === Totales === #
-
-    def test_totales_por_grupo_y_global(self):
-        self._entregada([(self.pieza, 2, 10.0)])
-        self._entregada([(self.pieza, 1, 5.0)])
-        self._entregada([(self.pieza, 3, 10.0)], cliente=self.cliente_b, zona=self.zona_b)
-        self._entregada([(self.pieza, 4, 10.0)], zona=False)
-        self.assertEqual(self._grupos(("zona_id", "cliente_id")), {
-            (self.zona_con_clientes.id, self.cliente.id): 25.0,
-            (self.zona_b.id, self.cliente_b.id): 30.0,
-            (False, self.cliente.id): 40.0,
-        })
-        self.assertEqual(self._grupos(("zona_id",)), {
-            (self.zona_con_clientes.id,): 25.0, (self.zona_b.id,): 30.0, (False,): 40.0,
-        })
-        self.assertEqual(sum(self._renglones().mapped("importe_entregado")), 95.0)
-
     # === Vista, acción, menú y permisos === #
 
     def test_lista_buscador_y_orden(self):
-        arch = etree.fromstring(self.env["stock.move"].with_user(self.papa).get_views(
+        Pendiente = self.env["duran.pendiente.cobro"]
+        arch = etree.fromstring(Pendiente.with_user(self.papa).get_views(
             [(self.accion.view_id.id, "list")],
         )["views"]["list"]["arch"])
         visibles = [c.get("name") for c in arch.xpath("//field") if not c.get("column_invisible")]
         self.assertEqual(visibles, COLUMNAS)
-        self.assertEqual(arch.xpath("//field[@name='importe_entregado']/@sum"), ["Total"])
         self.assertEqual(
-            {c: arch.xpath(f"//field[@name='{c}']/@optional") for c in ("peso_real", "pedido")},
-            {"peso_real": ["show"], "pedido": ["show"]},
+            {c: arch.xpath(f"//field[@name='{c}']/@sum") for c in ("pendiente_hoy", "saldo_anterior", "total")},
+            {"pendiente_hoy": ["Total"], "saldo_anterior": ["Total"], "total": ["Total"]},
         )
-        self.assertEqual(arch.get("default_order"), "pedido, id")
-        # En los grupos no se suma la Cantidad (mezclaría kg con piezas); el Peso sí.
-        agregados = self.env["stock.move"].fields_get(["cantidad_entregada", "peso_real"], ["aggregator"])
-        self.assertEqual(
-            {c: agregados[c].get("aggregator") for c in agregados}, {"cantidad_entregada": None, "peso_real": "sum"},
-        )
+        self.assertEqual(arch.xpath("//field[@name='pedido']/@optional"), ["show"])
+        self.assertEqual(arch.get("default_order"), "orden_clave, id")
+        # En los grupos: Cantidad sin suma (mezclaría kg con piezas); Días, el máximo.
+        agregados = Pendiente.fields_get(["cantidad", "dias_antiguedad"], ["aggregator"])
+        self.assertEqual({c: agregados[c].get("aggregator") for c in agregados}, {"cantidad": None, "dias_antiguedad": "max"})
         contexto = safe_eval(self.accion.context)
         self.assertEqual(
             {k: v for k, v in contexto.items() if k.startswith("search_default_")},
-            {"search_default_hoy": 1, "search_default_agrupar_zona": 1, "search_default_agrupar_cliente": 2},
+            {"search_default_agrupar_zona": 1, "search_default_agrupar_cliente": 2},
         )
-        busqueda = etree.fromstring(self.env["stock.move"].get_views(
-            [(self.accion.search_view_id.id, "search")],
-        )["views"]["search"]["arch"])
+        self.assertFalse(self.accion.domain)
+        # Sin filtro "Hoy": solo "Solo con saldo anterior".
+        busqueda = self._busqueda()
         self.assertEqual(
-            [f.get("name") for f in busqueda.xpath("/search/field")], ["cliente_id", "product_id", "zona_id", "pedido"],
+            [f.get("name") for f in busqueda.xpath("//filter[@domain]")], ["solo_saldo"],
         )
+        self.assertFalse(busqueda.xpath("//filter[@name='hoy']"))
+        self.assertEqual(self._filtro("solo_saldo"), [("tipo", "=", "saldo")])
+        # Orden: lo de hoy por pedido; después los saldos del más antiguo al más reciente.
+        cliente = self._nuevo_cliente("Cliente pendiente orden")
+        reciente = self._facturada(cliente, 1.0, fecha=self.hoy - timedelta(days=2))
+        antigua = self._facturada(cliente, 1.0, fecha=self.hoy - timedelta(days=9))
+        primera = self._entregada(cliente, [(self.pieza, 1, 1.0)])
+        segunda = self._entregada(cliente, [(self.pieza, 1, 1.0)])
         self.assertEqual(
-            {f.get("name"): safe_eval(f.get("context"))["group_by"] for f in busqueda.xpath("//group/filter")},
-            {"agrupar_zona": "zona_id", "agrupar_cliente": "cliente_id", "agrupar_dia": "date:day"},
+            self._renglones(cliente).mapped("pedido"),
+            sorted([primera.name, segunda.name]) + [antigua.name, reciente.name],
         )
-        self.assertEqual(self._filtro("hoy"), [("date", ">=", "today"), ("date", "<", "today +1d")])
 
-    def test_menu_accion_e_importe_solo_gerente(self):
+    def test_menu_y_acceso_solo_gerente(self):
         Menu = self.env["ir.ui.menu"]
         self.assertEqual(self.menu.parent_id, self.env.ref("sale.sale_order_menu"))
         self.assertEqual(self.accion.group_ids, self.env.ref("sales_team.group_sale_manager"))
+        self._entregada(self.cliente, [(self.pieza, 1, 10.0)])
         for usuario in (self.papa, self.admin):
             with self.subTest(usuario=usuario.login):
                 self.assertIn(self.menu.id, Menu.with_user(usuario)._visible_menu_ids())
-        orden = self._entregada([(self.pieza, 1, 10.0)])
+                self.assertTrue(self._renglones(self.cliente))
         for usuario in (self.mama, self.vendedor):
             with self.subTest(usuario=usuario.login):
                 self.assertNotIn(self.menu.id, Menu.with_user(usuario)._visible_menu_ids())
-                movimiento = self._movimientos(orden).with_user(usuario)
                 with self.assertRaises(AccessError):
-                    movimiento.read(["importe_entregado"])
-                vista = self.env["stock.move"].with_user(usuario).get_views(
-                    [(self.accion.view_id.id, "list")],
-                )["views"]["list"]["arch"]
-                self.assertNotIn("importe_entregado", vista)
+                    self.env["duran.pendiente.cobro"].with_user(usuario).search([])
+        self.assertTrue(self.mama.has_group(GRUPO_CAPTURA))

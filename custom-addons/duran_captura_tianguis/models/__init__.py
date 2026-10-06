@@ -4,3 +4,4 @@ from . import res_partner
 from . import captura_entrega
 from . import captura_cobro
 from . import stock_move
+from . import pendiente_cobro
