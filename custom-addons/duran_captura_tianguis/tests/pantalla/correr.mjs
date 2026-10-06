@@ -108,6 +108,12 @@ try {
         [
             "--headless=new",
             "--disable-gpu",
+            // Barras de desplazamiento como en el celular (Android las dibuja
+            // encima, sin quitar ancho). El Chrome de escritorio 154.0.8037.98
+            // las pone clásicas, de 15px: en las pantallas que se deslizan el
+            // ancho útil bajaba a 378px y todo lo alineado a la derecha se
+            // corría. (--enable-features=OverlayScrollbar no tiene efecto en macOS.)
+            "--hide-scrollbars",
             // Sin --user-data-dir: en modo headless Chrome ya usa un perfil
             // temporal propio (no toca tu Chrome), y con un perfil indicado a
             // mano en macOS escribe el resultado pero no termina.

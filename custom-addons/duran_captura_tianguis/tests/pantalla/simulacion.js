@@ -100,6 +100,8 @@ const mov = (move_id, cantidad, sin_existencia, precio) => ({
     move_id, cantidad, reservada: sin_existencia ? 0 : cantidad, sin_existencia, precio,
 });
 let otraPersonaCambio = false; // tras "cambiaron": a Doña Carmen ya no le queda el rollo 102 ni la caja
+let otraPersonaEntrego12 = false; // otra persona ya validó todo lo de Cliente con historial
+let sinCambiosDonaRosa = false; // aparece Doña Rosa: solo un producto normal (se revisa sin capturar nada)
 const pendientes = {
     9: () => ({
         cliente: { id: 9, nombre: "Doña Carmen" },
@@ -136,9 +138,15 @@ const pendientes = {
         puede_cobrar: false,
         visto: { lineas: [[331, 3], [332, 1.5], [333, 1], [334, 2], [335, 1]], documentos: [[521, 118]], borradores: [602] },
     }),
+    14: () => ({
+        cliente: { id: 14, nombre: "Doña Rosa" },
+        productos: [{ ...BLANCA, cantidad: 2, sin_existencia: false, movimientos: [mov(301, 2, false, 70)] }],
+    }),
     12: () => ({
         cliente: { id: 12, nombre: "Cliente con historial" },
-        productos: [{ ...ESTRELLA, cantidad: 1, sin_existencia: false, movimientos: [mov(201, 1, false, 85)] }],
+        productos: otraPersonaEntrego12
+            ? []
+            : [{ ...ESTRELLA, cantidad: 1, sin_existencia: false, movimientos: [mov(201, 1, false, 85)] }],
     }),
 };
 const productoDeMovimiento = (moveId) =>
@@ -233,7 +241,13 @@ function confirmarSimulado(p) {
 
 const datosEntrega = {
     "/captura/api/entrega/clientes": (p) =>
-        p.zona_id === 1 ? [{ id: 9, nombre: "Doña Carmen" }, { id: 12, nombre: "Cliente con historial" }] : [],
+        p.zona_id === 1
+            ? [
+                  { id: 9, nombre: "Doña Carmen" },
+                  { id: 12, nombre: "Cliente con historial" },
+                  ...(sinCambiosDonaRosa ? [{ id: 14, nombre: "Doña Rosa" }] : []),
+              ]
+            : [],
     "/captura/api/entrega/pendiente": (p) => pendientes[p.cliente_id](),
 };
 
@@ -387,7 +401,9 @@ function acomodoSimulado() {
     if (modo === "vacio") {
         return [];
     }
-    const pedidos = (lista, primerId) => lista.map((p, i) => ({ id: primerId + i, posicion: i + 1, ...p }));
+    // Como el servidor: la posición es el orden de entrega (1 = el más antiguo) y
+    // la lista va al revés, en el orden de carga del carrito.
+    const pedidos = (lista, primerId) => lista.map((p, i) => ({ id: primerId + i, posicion: i + 1, ...p })).reverse();
     return [
         { id: 1, nombre: "Bosques", pedidos: pedidos(BOSQUES_ACOMODO, 60) },
         {
@@ -486,6 +502,92 @@ async function responderModal(si) {
     q(si ? "#modal-si" : "#modal-no").click();
     await espera(150);
 }
+
+// Pregunta al salir con algo sin enviar, confirmar o registrar:
+// "ahora" (botón verde de arriba), "salir" (contorno, abajo) o "quedarse"
+// (tocar el fondo oscuro).
+async function responderSalida(opcion) {
+    q({ ahora: "#modal-si", salir: "#modal-no", quedarse: "#modal" }[opcion]).click();
+    await espera(150);
+}
+
+const preguntaAbierta = () => [
+    q("#modal").hidden, txt("#modal-titulo"), txt("#modal-texto"), txt("#modal-si"), txt("#modal-no"),
+];
+
+const VERDE = "rgb(10, 107, 44)";
+const BLANCO = "rgb(255, 255, 255)";
+
+function checkFranja(pantalla, accion, conteo, aviso) {
+    // Franja blanca con raya arriba; botón verde real (≥72px, redondeado, con
+    // borde, sombra y 16px a los lados), verbo arriba en grande y conteo
+    // abajo en chico; y el aviso ámbar justo arriba del botón (o ninguno).
+    const franja = q("#barra-pedido");
+    const boton = q("#btn-pedido");
+    const r = boton.getBoundingClientRect();
+    const estilo = getComputedStyle(boton);
+    const falta = q("#falta-paso");
+    const ancho = document.documentElement.clientWidth;
+    check(
+        `Franja de abajo: ${pantalla}`,
+        [
+            franja.hidden,
+            getComputedStyle(franja).backgroundColor,
+            getComputedStyle(franja).borderTopWidth,
+            [txt("#pedido-accion"), txt("#pedido-conteo")],
+            [getComputedStyle(q("#pedido-accion")).fontSize, getComputedStyle(q("#pedido-conteo")).fontSize],
+            q("#pedido-accion").getBoundingClientRect().bottom <= q("#pedido-conteo").getBoundingClientRect().top + 1,
+            r.height >= 72,
+            parseFloat(estilo.borderTopLeftRadius) >= 12 && parseFloat(estilo.borderTopWidth) >= 2 && estilo.boxShadow !== "none",
+            [Math.round(r.left), Math.round(ancho - r.right)],
+            boton.disabled ? null : estilo.backgroundColor,
+            falta.hidden ? null : txt("#falta-paso"),
+            falta.hidden || falta.getBoundingClientRect().bottom <= r.top,
+        ],
+        [false, BLANCO, "3px", [accion, conteo], ["26px", "17px"], true, true, true, [16, 16], boton.disabled ? null : VERDE, aviso, true]
+    );
+}
+
+async function checkNadaTapado(pantalla) {
+    // A 393 x 852 y a 393 x 780: deslizando hasta abajo, lo último del
+    // contenido queda arriba de la franja (no la toca).
+    const marco = window.frameElement;
+    const resultados = [];
+    for (const alto of [852, 780]) {
+        marco.style.height = `${alto}px`;
+        await espera(80);
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        await espera(30);
+        const ultimo = q("#contenido").lastElementChild.getBoundingClientRect();
+        const franja = q("#barra-pedido").getBoundingClientRect();
+        resultados.push([alto, window.innerHeight, ultimo.bottom <= franja.top]);
+    }
+    marco.style.height = `${CELULAR[1]}px`;
+    await espera(80);
+    window.scrollTo(0, 0);
+    check(`Nada tapado por la franja (852 y 780): ${pantalla}`, resultados, [[852, 852, true], [780, 780, true]]);
+}
+
+function checkExito(pantalla, titulo) {
+    // Bloque verde claro con borde verde, palomeo de 140px y el título de 34px.
+    const bloque = q(".exito");
+    const marca = q(".exito-marca");
+    check(
+        `Éxito inconfundible: ${pantalla}`,
+        [
+            !!bloque,
+            bloque && getComputedStyle(bloque).backgroundColor,
+            bloque && getComputedStyle(bloque).borderTopColor,
+            marca && [marca.offsetWidth, marca.offsetHeight, marca.textContent],
+            bloque && bloque.querySelector("p:nth-child(2)").textContent,
+            getComputedStyle(q(".exito-titulo")).fontSize,
+            q("#barra-pedido").hidden,
+        ],
+        [true, "rgb(227, 245, 232)", VERDE, [140, 140, "✓"], titulo, "34px", true]
+    );
+}
+
+const recordatorios = () => qa(".recordatorio").map((b) => b.textContent);
 
 const llamadasA = (final) => llamadas.filter((ruta) => ruta.endsWith(final)).length;
 

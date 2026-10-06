@@ -125,7 +125,10 @@ Qué hace:
 - Recorre la pantalla como quien captura (`tests/pantalla/escenario.js`): inicio (Pedido /
   Entrega / Cobro), los modos Entrega y Cobro completos, zonas, zona vacía,
   clientes, productos, sumar/restar/quitar, confirmación al salir, "Lo de siempre", resumen,
-  doble toque, envío sin señal y reintento, error del servidor y pantalla de éxito.
+  doble toque, envío sin señal y reintento, error del servidor y pantalla de éxito; la franja
+  de abajo con su aviso "Falta un paso", la pregunta al salir con "hacerlo ahora", los
+  recordatorios de Inicio y "Continuar". Algunas pantallas se revisan también a 393 × 780
+  (el marco se achica un momento) para comprobar que la franja de abajo no tape nada.
 - La página se prueba dos veces, una después de la otra: como la ve un administrador o gerente
   (con botón "Salir") y como la ve el usuario de tianguis (sin "Salir" en Inicio).
 - Chrome usa un perfil temporal propio: no toca tu Chrome ni sus pestañas.
@@ -164,7 +167,11 @@ node custom-addons/duran_captura_tianguis/tests/pantalla/correr.mjs
 | Cliente con varias zonas aparece en cada una | `test_pagina_y_rutas.py` | — |
 | Catálogo por categoría, nombre + atributo, precio "$85/kg" / "c/u", sin peso variable sin precio | `test_pagina_y_rutas.py` | Productos |
 | Un toque suma 1, restar, quitar, cantidades enteras con su unidad, indicador suma cantidades | — | Productos |
-| Confirmar antes de vaciar el pedido (también con "atrás" del celular) | — | Confirmación |
+| Salir con algo sin enviar, confirmar o registrar (INICIO, Regresar, "atrás" del celular, abrir el cobro de otro cliente): pregunta "Este pedido NO se ha enviado" / "Esta entrega NO se ha confirmado" / "Este cobro NO se ha registrado"; verde arriba "✓ … ahora" en la pantalla final o "Revisar y …" antes de ella; "Salir sin …" vacía el pedido y conserva entrega y cobro; tocar el fondo o "atrás" con la pregunta abierta = quedarse (el historial queda igual); "ahora" con éxito se queda en el éxito, sin señal o con error se queda con el mensaje rojo, doble toque sin duplicar; Regresar a la pantalla anterior no pregunta | — | Confirmación, Inicio con pedido, Entrega: pendientes, Cobro |
+| Qué cuenta como pendiente (`pendientes()`, también para el aviso de recarga): pedido con productos; entrega con algo capturado o ya revisada aunque no cambie nada; cobro con "Pagó todo", "Pagó una parte" o "No pagó hoy" elegido o monto escrito; lo capturado de movimientos que ya no están pendientes se poda (no cuenta) | — | Entrega: pendientes, Cobro |
+| Franja de abajo igual en las tres operaciones: blanca con raya arriba, botón verde ≥72px redondeado con borde, sombra y 16px a los lados, verbo arriba (26px) y conteo o total abajo (17px); aviso ámbar "Falta un paso…" solo en la pantalla final; "Registrar cobro" en la franja; nada del contenido tapado a 393 × 852 ni a 393 × 780; títulos "Falta enviar el pedido" / "Falta confirmar la entrega" / "Falta registrar el cobro" | — | Resumen, Entrega, Cobro |
+| Recordatorios en Inicio (entregas y cobros sin confirmar): máximo 2 renglones y "y N más"; "Continuar" abre esa pantalla con el historial armado (Regresar funciona igual); con 2 y "y 1 más" los 4 botones caben sin deslizar para el usuario de tianguis | — | Entrega: pendientes, Cobro, Inicio de tianguis |
+| Pantallas de éxito: bloque verde claro con borde verde, palomeo de 140px, "PEDIDO ENVIADO" / "ENTREGA CONFIRMADA" / "COBRO REGISTRADO" a 34px; también sin datos (atrás o adelante) | — | Envío, Entrega, Cobro |
 | "Lo de siempre": 90 días, máximo 8, por frecuencia; aparece primero; se comporta como el catálogo | `test_lo_de_siempre.py` (incluye que el costo no crece con el historial) | Lo de siempre |
 | Resumen sin precios ni total | — | Resumen |
 | Orden siempre nueva, con zona elegida y quien captura como vendedor, confirmada, con entrega, sin impuestos | `test_enviar.py` | Envío |
@@ -223,7 +230,8 @@ clientes de prueba (A y B) y un usuario del grupo "Captura tianguis".
    - Escribir un monto menor, con coma (por ejemplo `100,50`): el eco dice
      "Recibe $100.50 · Queda debiendo $…".
    - Intentar recargar la página: debe preguntar antes.
-   - "✓ Registrar cobro": pantalla "Cobrado: $100.50" y "Queda debiendo: $…".
+   - "✓ REGISTRAR COBRO" (botón verde de abajo): pantalla "COBRO REGISTRADO" con
+     "Cobrado: $100.50" y "Queda debiendo: $…".
    - En Odoo, Facturación › Clientes › Facturas: una factura de A, publicada, por $X y
      "Parcialmente pagado" con el saldo que dijo la pantalla.
 3. **Saldo anterior.** Hacer otra entrega a A. Cobro › A: se ven lo entregado nuevo y, en
@@ -252,6 +260,37 @@ clientes de prueba (A y B) y un usuario del grupo "Captura tianguis".
    - Cada pago tiene la referencia "Cobro en tianguis #N", igual al número del cobro.
 9. **Al sol y con una mano.** Que el total, "Pagó todo" y el campo del monto se lean y se
    alcancen bien. Con un total de más de $1,000, revisar que se vea como "$1,234.50".
+
+## 7b. Lista de verificación en el celular: "Falta un paso"
+
+En duranDEV, con el usuario de tianguis, en el celular (vertical). Hace falta un cliente con
+entregas pendientes y otro con algo por cobrar.
+
+1. **Pedido.** Pedido › zona › cliente › agregar 2 productos › "REVISAR PEDIDO ›".
+   - Arriba dice "Falta enviar el pedido"; abajo, el aviso amarillo "Falta un paso: este pedido
+     todavía NO se ha enviado" y el botón verde "✓ ENVIAR PEDIDO" con "2 productos en el pedido"
+     en chico. Deslizar hasta abajo: "Para cambiar algo, toca Regresar." se ve completo, sin que
+     la franja lo tape.
+   - Tocar INICIO: sale "Este pedido NO se ha enviado" con "✓ Enviar pedido ahora" (verde) y
+     "Salir sin enviar". Tocar fuera de la ventana: se queda en el resumen.
+   - Poner el modo avión, INICIO › "✓ Enviar pedido ahora": se queda en el resumen con el
+     mensaje rojo. Quitar el modo avión, INICIO › "✓ Enviar pedido ahora": "PEDIDO ENVIADO"
+     con el palomeo grande. En Odoo hay **una sola** orden.
+2. **Entrega.** Entrega › zona › cliente › capturar un peso › INICIO: "Esta entrega NO se ha
+   confirmado" con "Revisar y confirmar". Tocar "Salir sin confirmar".
+   - En Inicio, arriba de los 4 botones: "⚠ Entrega sin confirmar: [cliente] · Continuar ›" y
+     los 4 botones se ven sin deslizar. Tocarlo: regresa a la entrega con el peso.
+   - "REVISAR ENTREGA ›" › resumen con "Falta confirmar la entrega" y el aviso amarillo ›
+     "✓ CONFIRMAR ENTREGA": "ENTREGA CONFIRMADA". El aviso de Inicio desaparece.
+3. **Cobro.** Cobro › zona › cliente › "Pagó todo": "Falta registrar el cobro", el aviso
+   amarillo y "✓ REGISTRAR COBRO" en la franja de abajo (ya no en medio de la pantalla).
+   - Regresar dos veces (al detalle no pregunta; a los clientes sí) › "Salir sin registrar".
+   - Tocar otro cliente: sale "Este cobro NO se ha registrado" del primero. "Revisar y
+     registrar" lleva a su confirmación; registrar: "COBRO REGISTRADO".
+4. **"Atrás" del celular** en cada caso: pregunta igual que Regresar; con la pregunta abierta,
+   "atrás" la cierra y se queda en la pantalla.
+5. **Al sol y con una mano:** que el aviso amarillo se lea, que el botón verde se distinga de la
+   barra verde de Entrega (arriba) y que se alcance con el pulgar.
 
 ## 8. Revisión a mano: hoja de carga en el celular
 

@@ -13,6 +13,12 @@
     --peligro: #b00020;
     --peligro-texto: #ffffff;
     --exito: #0a6b2c;
+    --exito-oscuro: #064d1f;
+    --exito-fondo: #e3f5e8;
+    /* Advertencia (falta un paso): ámbar claro con letra café oscura, 9:1. */
+    --advertencia-fondo: #fff3cd;
+    --advertencia-borde: #b26a00;
+    --advertencia-texto: #4a2c00;
     --separador: #c9c9c9;
     /* Color de cada operación (barra superior y su botón en Inicio). Todos con
        contraste de 6:1 o más contra el texto blanco. */
@@ -36,7 +42,9 @@ html, body {
     -webkit-text-size-adjust: 100%;
 }
 
-body { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }  /* espacio para la barra del pedido */
+/* Abajo, el alto real de la franja del botón verde (captura.js lo mide en
+   --alto-barra-abajo, con su aviso); sin franja, 16px. */
+body { padding-bottom: max(16px, var(--alto-barra-abajo, 0px)); }
 
 button {
     font: inherit;
@@ -258,6 +266,36 @@ button {
     color: var(--primario-texto);
 }
 .btn-modo[data-operacion]:active { background: var(--color-operacion); filter: brightness(0.8); }
+/* Entregas y cobros capturados que no están en Odoo: arriba de los 4 botones. */
+.recordatorios {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 14px;
+}
+.recordatorio {
+    display: block;
+    width: 100%;
+    min-height: 60px;
+    padding: 8px 14px;
+    border: 4px solid var(--advertencia-borde);
+    border-radius: var(--radio);
+    background: var(--advertencia-fondo);
+    color: var(--advertencia-texto);
+    font-size: 19px;
+    font-weight: 800;
+    line-height: 1.25;
+    text-align: left;
+}
+.recordatorio:active { filter: brightness(0.92); }
+.recordatorio-continuar { text-decoration: underline; white-space: nowrap; }
+.recordatorio-mas {
+    margin: 0;
+    color: var(--advertencia-texto);
+    font-size: 18px;
+    font-weight: 800;
+}
+
 .btn-modo:disabled {
     border-style: dashed;
     color: var(--texto-suave);
@@ -345,7 +383,9 @@ button {
     to { transform: scale(1); }
 }
 
-/* === Barra del pedido (abajo, al alcance del pulgar) === */
+/* === Franja de abajo (al alcance del pulgar) ===
+   Blanca, con una raya arriba: el verde lo lleva SOLO el botón, para que no se
+   confunda con una barra de estado ni con la barra verde de Entrega. */
 
 .barra-pedido {
     position: fixed;
@@ -353,36 +393,70 @@ button {
     right: 0;
     bottom: 0;
     z-index: 10;
-    padding: 8px 16px;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom));
-    background: var(--texto);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 16px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    border-top: 3px solid var(--borde);
+    background: var(--fondo);
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.18);
 }
-.barra-pedido.con-productos { background: var(--primario); }
-.barra-pedido.para-enviar { background: var(--exito); }
 
+/* Pantalla final: todavía no se ha enviado, confirmado o registrado. */
+.falta-paso {
+    margin: 0;
+    padding: 8px 12px;
+    border: 3px solid var(--advertencia-borde);
+    border-radius: var(--radio);
+    background: var(--advertencia-fondo);
+    color: var(--advertencia-texto);
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.25;
+}
+.falta-paso::before { content: "⚠ "; }
+
+/* Botón real: verde, redondeado, con borde y sombra; verbo arriba en grande
+   y el conteo o el total abajo en chico. */
 .btn-pedido {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 2px;
     width: 100%;
-    min-height: 64px;
-    padding: 4px 8px;
-    border: 0;
-    border-radius: var(--radio);
-    background: transparent;
-    color: var(--fondo);
+    min-height: 76px;
+    padding: 8px 12px;
+    border: 3px solid var(--exito-oscuro);
+    border-radius: 16px;
+    background: var(--exito);
+    color: var(--primario-texto);
+    box-shadow: 0 4px 0 #04381a, 0 6px 12px rgba(0, 0, 0, 0.3);
 }
-.btn-pedido:disabled { cursor: default; }
-.btn-pedido:not(:disabled):active { background: rgba(255, 255, 255, 0.18); }
+.btn-pedido:not(:disabled):active {
+    transform: translateY(3px);
+    background: var(--exito-oscuro);
+    box-shadow: 0 1px 0 #04381a;
+}
+/* Vacío, enviando o revisando: gris y sin sombra. */
+.btn-pedido:disabled {
+    border-color: #7a7a7a;
+    background: #a6a6a6;
+    color: #1f1f1f;
+    box-shadow: none;
+    cursor: default;
+}
 
-.pedido-conteo {
-    font-size: 19px;
-    font-weight: 700;
-}
 .pedido-accion {
-    font-size: 24px;
-    font-weight: 800;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+    line-height: 1.15;
+}
+.pedido-conteo {
+    font-size: 17px;
+    font-weight: 700;
 }
 
 /* === Resumen === */
@@ -425,27 +499,38 @@ button {
     font-weight: 700;
 }
 
-/* === Pedido enviado === */
+/* === Pantallas de éxito (pedido enviado, entrega confirmada, cobro registrado) === */
 
-.enviado {
-    margin: 8px 0 24px;
+.exito {
+    margin: 0 0 20px;
+    padding: 16px 12px 20px;
+    border: 4px solid var(--exito);
+    border-radius: var(--radio);
+    background: var(--exito-fondo);
     text-align: center;
 }
-.enviado-marca {
-    display: inline-block;
-    width: 88px;
-    height: 88px;
-    margin: 0 0 8px;
+.exito-marca {
+    width: 140px;
+    height: 140px;
+    margin: 0 auto 10px;
     border-radius: 50%;
     background: var(--exito);
     color: #ffffff;
-    font-size: 56px;
-    font-weight: 800;
-    line-height: 88px;
+    font-size: 96px;
+    font-weight: 900;
+    line-height: 140px;
+}
+.exito-titulo {
+    margin: 0 0 10px;
+    color: var(--exito-oscuro);
+    font-size: 34px;
+    font-weight: 900;
+    line-height: 1.1;
+    overflow-wrap: anywhere;
 }
 .enviado-titulo {
     margin: 0 0 6px;
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 800;
 }
 .enviado-detalle {
@@ -476,11 +561,32 @@ button {
     background: var(--fondo);
 }
 
+.modal-titulo {
+    margin: 0;
+    color: var(--peligro);
+    font-size: 26px;
+    font-weight: 900;
+    line-height: 1.15;
+}
+
 .modal-texto {
     margin: 0 0 8px;
     font-size: 22px;
     font-weight: 700;
 }
+
+/* "Hacerlo ahora": el mismo verde que el botón de la franja. */
+.btn-exito {
+    min-height: 72px;
+    border: 3px solid var(--exito-oscuro);
+    background: var(--exito);
+    color: var(--primario-texto);
+    font-size: 24px;
+    font-weight: 900;
+    text-align: center;
+    box-shadow: 0 4px 0 #04381a;
+}
+.btn-exito:active { background: var(--exito-oscuro); }
 
 /* === Modo Entrega: lo pendiente === */
 
@@ -663,15 +769,7 @@ button {
     font-weight: 900;
 }
 .btn-pago-todo:active { background: #064d1f; }
-.btn-registrar-cobro {
-    margin-top: 20px;
-    min-height: 76px;
-    background: var(--exito);
-    border-color: var(--exito);
-    font-size: 26px;
-    font-weight: 900;
-}
-.btn-registrar-cobro:disabled { opacity: 0.6; }
+.cobro-tipo { margin: 0 0 16px; font-size: 26px; font-weight: 900; }
 .monto-eco { margin: 10px 0 16px; }
 .queda-debiendo {
     margin: 0 0 8px;
@@ -698,6 +796,15 @@ button {
     font-size: 28px;
     font-weight: 800;
     overflow-wrap: anywhere;
+}
+
+/* Debajo del encabezado (no pegada: al deslizar pasa por debajo de él). */
+.acomodo-instruccion {
+    margin: 8px 0 0;
+    color: var(--texto-suave);
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.25;
 }
 
 .acomodo-columnas {

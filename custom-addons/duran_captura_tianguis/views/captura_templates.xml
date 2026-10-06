@@ -34,17 +34,23 @@
             <p class="aviso">Cargando…</p>
             <noscript><p class="aviso">Esta pantalla necesita JavaScript activado.</p></noscript>
         </main>
+        <!-- Franja de abajo de Pedido, Entrega y Cobro: el botón verde con el
+             verbo ("REVISAR PEDIDO ›", "✓ ENVIAR PEDIDO"…) y, en la pantalla
+             final, el aviso de que todavía falta ese paso. -->
         <footer id="barra-pedido" class="barra-pedido" hidden="hidden">
-            <!-- En Productos: "Revisar pedido". En Resumen: "Enviar pedido". -->
+            <p id="falta-paso" class="falta-paso" role="alert" hidden="hidden"></p>
             <button type="button" id="btn-pedido" class="btn-pedido" disabled="disabled">
+                <span id="pedido-accion" class="pedido-accion"></span>
                 <span id="pedido-conteo" class="pedido-conteo">Pedido vacío</span>
-                <span id="pedido-accion" class="pedido-accion" hidden="hidden"></span>
             </button>
         </footer>
+        <!-- Pregunta (en lugar de window.confirm): el botón "Sí" toma su color
+             de quien pregunta (rojo para borrar, verde para enviar ahora). -->
         <div id="modal" class="modal-fondo" hidden="hidden">
-            <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="modal-texto">
+            <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="modal-titulo modal-texto">
+                <p id="modal-titulo" class="modal-titulo" hidden="hidden"></p>
                 <p id="modal-texto" class="modal-texto"></p>
-                <button type="button" id="modal-si" class="btn btn-peligro"></button>
+                <button type="button" id="modal-si" class="btn"></button>
                 <button type="button" id="modal-no" class="btn btn-secundario"></button>
             </div>
         </div>

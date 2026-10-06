@@ -1,6 +1,7 @@
 """ Acomodo de entregas: pedidos del día operativo con algo pendiente de
-entregar, agrupados por zona y en el orden en que se levantaron (solo
-lectura). """
+entregar, agrupados por zona; cada uno con su posición de entrega (en el orden
+en que se levantaron) y la lista en el orden de carga del carrito, del más
+reciente al más antiguo (solo lectura). """
 from datetime import datetime
 
 import pytz
@@ -99,32 +100,57 @@ class TestAcomodo(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
             for zona in self._resultado(RUTA)
         ]
 
-    def test_pedidos_del_dia_por_zona_en_orden_de_llegada(self):
+    def test_pedidos_del_dia_por_zona_en_orden_de_carga(self):
+        # La posición es el orden de entrega (el más antiguo = 1); la lista va
+        # al revés, en el orden en que se carga el carrito.
         normal = ("Normal prueba", 5.0, "c/u", False)
         self.assertEqual(self._acomodo(), [
             ("Zona prueba con clientes", [
+                (3, "Doña Carmen prueba", [("Normal prueba", 1.0, "c/u", False)]),
+                (2, "Tortillería La Guadalupana de Doña Lupita prueba", [("Por kilo prueba", 3.0, "kg", False)]),
                 (1, "Doña Carmen prueba", [
                     normal,  # 2 + 3 de dos líneas del mismo producto
                     ("Peso variable con precio prueba", 2.0, "c/u", True),  # 2 rollos, sin peso
                     ("Por kilo prueba", 1.5, "kg", False),
                 ]),
-                (2, "Tortillería La Guadalupana de Doña Lupita prueba", [("Por kilo prueba", 3.0, "kg", False)]),
-                (3, "Doña Carmen prueba", [("Normal prueba", 1.0, "c/u", False)]),
             ]),
             ("Zona prueba B", [
-                (1, "Don Beto prueba", [("Peso variable con precio prueba", 1.0, "c/u", True)]),
-                (2, "Cliente prueba solo zona B", [("Normal prueba", 4.0, "c/u", False)]),
-                (3, "Don Beto prueba", [("Normal prueba", 1.0, "c/u", False)]),
                 (4, "Cliente prueba solo zona B", [("Por kilo prueba", 2.0, "kg", False)]),
+                (3, "Don Beto prueba", [("Normal prueba", 1.0, "c/u", False)]),
+                (2, "Cliente prueba solo zona B", [("Normal prueba", 4.0, "c/u", False)]),
+                (1, "Don Beto prueba", [("Peso variable con precio prueba", 1.0, "c/u", True)]),
             ]),
             ("Zona prueba C", [
                 (1, "Cliente prueba entrega parcial", [("Normal prueba", 3.0, "c/u", False)]),
             ]),
             ("Sin zona", [
-                (1, "Cliente prueba dos zonas", [("Normal prueba", 1.0, "c/u", False)]),
                 (2, "Cliente prueba sin zona", [("Normal prueba", 1.0, "c/u", False)]),
+                (1, "Cliente prueba dos zonas", [("Normal prueba", 1.0, "c/u", False)]),
             ]),
         ])
+
+    def test_lista_del_mas_reciente_al_mas_antiguo_con_posicion_de_entrega(self):
+        zonas = {zona["nombre"]: zona["pedidos"] for zona in self._resultado(RUTA)}
+        # Tres pedidos de una zona: la lista sale 3, 2, 1, y cada número sigue
+        # siendo su posición de entrega (1 = el más antiguo).
+        pedidos = zonas["Zona prueba con clientes"]
+        self.assertEqual([p["posicion"] for p in pedidos], [3, 2, 1])
+        self.assertEqual(
+            [p["id"] for p in pedidos],
+            [self.o_carmen_2.id, self.o_lupita.id, self.o_carmen.id],
+        )
+        # Mismo segundo: desempata el id, también al revés.
+        self.assertEqual(
+            [(p["posicion"], p["id"]) for p in zonas["Zona prueba B"][:2]],
+            [(4, self.o_solo_b_2.id), (3, self.o_beto_2.id)],
+        )
+
+    def test_orden_entre_zonas_no_cambia(self):
+        # Primero la zona con el pedido pendiente más antiguo; "Sin zona" al final.
+        self.assertEqual(
+            [zona["nombre"] for zona in self._resultado(RUTA)],
+            ["Zona prueba con clientes", "Zona prueba B", "Zona prueba C", "Sin zona"],
+        )
 
     def test_productos_traen_por_kg(self):
         productos = {
@@ -137,10 +163,10 @@ class TestAcomodo(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
 
     def test_cada_bloque_es_un_pedido(self):
         ids = [pedido["id"] for zona in self._resultado(RUTA) for pedido in zona["pedidos"]]
-        self.assertEqual(ids, (
-            self.o_carmen | self.o_lupita | self.o_carmen_2
-            | self.o_beto | self.o_solo_b | self.o_beto_2 | self.o_solo_b_2
-            | self.o_parcial | self.o_dos_zonas | self.o_sin_zona
+        self.assertEqual(ids, (  # en el orden de carga: del más reciente al más antiguo
+            self.o_carmen_2 | self.o_lupita | self.o_carmen
+            | self.o_solo_b_2 | self.o_beto_2 | self.o_solo_b | self.o_beto
+            | self.o_parcial | self.o_sin_zona | self.o_dos_zonas
         ).ids)
         self.assertLess(self.o_beto_2.id, self.o_solo_b_2.id, "el empate se resuelve por id")
 

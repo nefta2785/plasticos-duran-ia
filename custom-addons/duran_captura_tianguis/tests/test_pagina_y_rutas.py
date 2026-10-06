@@ -39,6 +39,7 @@ class TestPaginaYRutas(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual(response.status_code, 200)
         for contenedor in (
             'id="contenido"', 'id="btn-regresar"', 'id="btn-inicio"', 'id="operacion"', 'id="barra-pedido"', 'id="btn-pedido"',
+            'id="falta-paso"', 'id="modal-titulo"',
         ):
             self.assertIn(contenedor, response.text)
 

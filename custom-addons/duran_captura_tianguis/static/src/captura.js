@@ -9,9 +9,10 @@
  * (nunca como HTML).
  *
  * Cada pantalla es una entrada del historial del navegador: el botón "atrás"
- * del celular hace lo mismo que "Regresar", incluida la confirmación antes de
- * vaciar un pedido. INICIO (arriba a la derecha) vuelve de un toque a la
- * primera entrada, la del Inicio. */
+ * del celular hace lo mismo que "Regresar". INICIO (arriba a la derecha)
+ * vuelve de un toque a la primera entrada, la del Inicio. Salir de una
+ * operación con algo sin enviar, confirmar o registrar (pendientes()) pregunta
+ * antes, ofreciendo hacerlo ahora. */
 (function () {
     "use strict";
 
@@ -31,10 +32,12 @@
         categorias: $("categorias"),
         contenido: $("contenido"),
         barraPedido: $("barra-pedido"),
+        faltaPaso: $("falta-paso"),
         btnPedido: $("btn-pedido"),
         pedidoConteo: $("pedido-conteo"),
         pedidoAccion: $("pedido-accion"),
         modal: $("modal"),
+        modalTitulo: $("modal-titulo"),
         modalTexto: $("modal-texto"),
         modalSi: $("modal-si"),
         modalNo: $("modal-no"),
@@ -61,7 +64,6 @@
         revisando: false, // pidiendo la vista previa de la entrega
         nivel: 0, // entradas del historial desde el Inicio con que abrió la app
     };
-    // Pantallas donde hay un pedido en curso (salir de ellas lo vacía).
     // Cada operación con su nombre e ícono (barra superior y botón de Inicio);
     // su color está en captura.css (--color-pedido, …).
     const OPERACIONES = {
@@ -70,12 +72,53 @@
         cobro: { nombre: "COBRO", icono: "💵", boton: "Cobro", detalle: "Cobrar lo entregado y lo pendiente" },
         acomodo: { nombre: "ACOMODO", icono: "🛒", boton: "Acomodo de entregas", detalle: "En qué orden acomodar el carrito" },
     };
-    const PANTALLAS_PEDIDO = ["productos", "resumen"];
-    const PANTALLAS_ENTREGA = ["entrega", "entrega-resumen"];
+    // Las pantallas de cada operación con un cliente; la última es la final,
+    // la del botón verde que envía, confirma o registra.
+    const PANTALLAS_OPERACION = {
+        pedido: ["productos", "resumen"],
+        entrega: ["entrega", "entrega-resumen"],
+        cobro: ["cobro", "cobro-confirmar"],
+    };
+    const PANTALLA_FINAL = { pedido: "resumen", entrega: "entrega-resumen", cobro: "cobro-confirmar" };
+    const PANTALLAS_PEDIDO = PANTALLAS_OPERACION.pedido;
+    // Pantallas con la franja de abajo (botón verde).
+    const PANTALLAS_CON_BARRA = ["productos", "resumen", "entrega", "entrega-resumen", "cobro-confirmar"];
+    // Textos de lo que falta: aviso de la franja, pregunta al salir y franja de Inicio.
+    const TEXTOS_PENDIENTE = {
+        pedido: {
+            falta: "Falta un paso: este pedido todavía NO se ha enviado",
+            titulo: "Este pedido NO se ha enviado",
+            texto: "Si sales ahora, se pierde.",
+            ahora: "✓ Enviar pedido ahora",
+            revisar: "Revisar y enviar",
+            salir: "Salir sin enviar",
+            recordatorio: "Pedido sin enviar",
+        },
+        entrega: {
+            falta: "Falta un paso: esta entrega todavía NO se ha confirmado",
+            titulo: "Esta entrega NO se ha confirmado",
+            texto: "Lo capturado se conserva, pero NO queda registrado en Odoo.",
+            ahora: "✓ Confirmar entrega ahora",
+            revisar: "Revisar y confirmar",
+            salir: "Salir sin confirmar",
+            recordatorio: "Entrega sin confirmar",
+        },
+        cobro: {
+            falta: "Falta un paso: este cobro todavía NO se ha registrado",
+            titulo: "Este cobro NO se ha registrado",
+            texto: "Lo capturado se conserva, pero NO queda registrado en Odoo.",
+            ahora: "✓ Registrar cobro ahora",
+            revisar: "Revisar y registrar",
+            salir: "Salir sin registrar",
+            recordatorio: "Cobro sin registrar",
+        },
+    };
     const PESTANA_HABITUALES = "habituales";
     let catalogo = null; // [{id, nombre, productos: [...]}], se carga una sola vez
     let numeroVista = 0; // para descartar respuestas de una pantalla que ya se dejó
     let confirmando = false;
+    let cerrarModal = null; // cierra la pregunta abierta con una respuesta
+    let destinoEnPregunta = null; // entrada a la que iba "atrás" cuando se preguntó al salir
     let yendoAlInicio = false; // INICIO ya preguntó: el próximo "popstate" va directo al Inicio
 
     // === Utilidades ===
@@ -164,27 +207,32 @@
 
     // === Confirmación (en lugar de window.confirm, que en celular es diminuto) ===
 
-    function confirmar(texto, textoSi, textoNo) {
+    function confirmar({ titulo = "", texto, si, no, claseSi = "btn-peligro" }) {
+        // Devuelve "si", "no" o null (tocar el fondo o "atrás": quedarse).
         confirmando = true;
         actualizarInicio();
         return new Promise((resolver) => {
+            ui.modalTitulo.textContent = titulo;
+            ui.modalTitulo.hidden = !titulo;
             ui.modalTexto.textContent = texto;
-            ui.modalSi.textContent = textoSi;
-            ui.modalNo.textContent = textoNo;
+            ui.modalSi.textContent = si;
+            ui.modalSi.className = `btn ${claseSi}`;
+            ui.modalNo.textContent = no;
             ui.modal.hidden = false;
             ui.modalNo.focus();
-            const cerrar = (respuesta) => {
+            cerrarModal = (respuesta) => {
                 ui.modal.hidden = true;
                 ui.modalSi.onclick = ui.modalNo.onclick = ui.modal.onclick = null;
+                cerrarModal = null;
                 confirmando = false;
                 actualizarInicio();
                 resolver(respuesta);
             };
-            ui.modalSi.onclick = () => cerrar(true);
-            ui.modalNo.onclick = () => cerrar(false);
+            ui.modalSi.onclick = () => cerrarModal("si");
+            ui.modalNo.onclick = () => cerrarModal("no");
             ui.modal.onclick = (evento) => {
                 if (evento.target === ui.modal) {
-                    cerrar(false);
+                    cerrarModal(null);
                 }
             };
         });
@@ -211,41 +259,152 @@
         dibujar();
     }
 
-    function preguntaVaciar() {
-        return (
-            `¿Vaciar el pedido de ${estado.cliente.nombre}? ` +
-            `Tiene ${plural(totalPedido(), "producto", "productos")} sin enviar.`
+    // === Lo que falta enviar, confirmar o registrar ===
+
+    function pendientes() {
+        // [{operacion, cliente, zona, pantalla}]: lo capturado que todavía no
+        // está en Odoo, con la pantalla a la que lleva "Continuar".
+        const lista = [];
+        if (estado.pedido.size && estado.cliente) {
+            lista.push({
+                operacion: "pedido",
+                cliente: estado.cliente,
+                zona: estado.zona,
+                pantalla: estado.pantalla === "resumen" ? "resumen" : "productos",
+            });
+        }
+        for (const captura of capturas.values()) {
+            if (entregaPendiente(captura)) {
+                lista.push({
+                    operacion: "entrega",
+                    cliente: captura.cliente,
+                    zona: captura.zona,
+                    pantalla: captura.vista ? "entrega-resumen" : "entrega",
+                });
+            }
+        }
+        for (const c of cobros.values()) {
+            if (c.tipo || c.montoTexto.trim()) {
+                lista.push({ operacion: "cobro", cliente: c.cliente, zona: c.zona, pantalla: c.tipo ? "cobro-confirmar" : "cobro" });
+            }
+        }
+        return lista;
+    }
+
+    function enPantallasDe(p) {
+        // ¿Está abierta una pantalla de esa operación con ese cliente?
+        return Boolean(
+            estado.cliente &&
+                estado.cliente.id === p.cliente.id &&
+                operacionActual() === p.operacion &&
+                PANTALLAS_OPERACION[p.operacion].includes(estado.pantalla)
         );
+    }
+
+    function pendienteAqui() {
+        // Lo que falta de la operación y el cliente de esta pantalla.
+        return pendientes().find(enPantallasDe) || null;
+    }
+
+    function saleDeLaOperacion(destino) {
+        // Ir a la pantalla anterior de la misma operación y el mismo cliente
+        // (Regresar desde el resumen) no es salir.
+        const pantallas = PANTALLAS_OPERACION[operacionActual()] || [];
+        return !(
+            pantallas.includes(destino.pantalla) &&
+            destino.cliente &&
+            estado.cliente &&
+            destino.cliente.id === estado.cliente.id
+        );
+    }
+
+    function preguntarAntesDeSalir(p) {
+        // "si" = hacerlo ahora (hacerAhora), "no" = salir, null = quedarse.
+        const textos = TEXTOS_PENDIENTE[p.operacion];
+        const enLaFinal = enPantallasDe(p) && estado.pantalla === PANTALLA_FINAL[p.operacion];
+        return confirmar({
+            titulo: textos.titulo,
+            texto: `${p.cliente.nombre}. ${textos.texto}`,
+            si: enLaFinal ? textos.ahora : textos.revisar,
+            no: textos.salir,
+            claseSi: "btn-exito",
+        });
+    }
+
+    function hacerAhora(p) {
+        // Lo mismo que el botón verde de la pantalla; desde antes de la
+        // pantalla final, lleva a ella.
+        if (!enPantallasDe(p)) {
+            continuarCon(p);
+            return;
+        }
+        const acciones = {
+            productos: () => irA("resumen", {}),
+            resumen: enviarPedido,
+            entrega: revisarEntrega,
+            "entrega-resumen": confirmarEntrega,
+            cobro: () => irA("cobro-confirmar", {}),
+            "cobro-confirmar": registrarCobro,
+        };
+        acciones[estado.pantalla]();
+    }
+
+    function continuarCon(p) {
+        // Abre lo pendiente armando el historial como si se hubiera llegado
+        // tocando (zonas → clientes → pantalla), para que Regresar funcione igual.
+        const pasos = [];
+        if (estado.pantalla === "inicio") {
+            pasos.push({ pantalla: "zonas", modo: p.operacion, zona: null, cliente: null });
+        }
+        if (estado.pantalla !== "clientes" || !estado.zona || estado.zona.id !== p.zona.id) {
+            pasos.push({ pantalla: "clientes", modo: p.operacion, zona: p.zona, cliente: null });
+        }
+        const anterior = PANTALLAS_OPERACION[p.operacion][0];
+        if (p.pantalla !== anterior) {
+            pasos.push({ pantalla: anterior, modo: p.operacion, zona: p.zona, cliente: p.cliente });
+        }
+        for (const paso of pasos) {
+            Object.assign(estado, paso, { nivel: estado.nivel + 1 });
+            history.pushState(fotoHistorial(), "");
+        }
+        irA(p.pantalla, { modo: p.operacion, zona: p.zona, cliente: p.cliente });
     }
 
     async function alMoverseEnHistorial(evento) {
         const destino = evento.state || { pantalla: "inicio", modo: null, zona: null, cliente: null };
         if (yendoAlInicio) {
-            // Lo pidió INICIO, que ya preguntó por el pedido: directo al Inicio.
+            // Lo pidió INICIO, que ya preguntó: directo al Inicio.
             yendoAlInicio = false;
             ponerEnInicio();
             return;
         }
         if (confirmando || estado.enviando || estado.revisando) {
-            // "Atrás" mientras se pregunta o mientras se envía: se queda aquí.
-            history.pushState(fotoHistorial(), "");
+            // "Atrás" mientras se pregunta o mientras se envía: se queda aquí
+            // (y la pregunta abierta se cierra como "quedarse"). Si la pregunta
+            // vino de otro "atrás", se repone primero la entrada que ese ya
+            // dejó; la de esta pantalla la repone quien preguntó.
+            history.pushState(destinoEnPregunta || fotoHistorial(), "");
+            if (cerrarModal) {
+                cerrarModal(null);
+            }
             return;
         }
-        const mismoCliente =
-            PANTALLAS_PEDIDO.includes(destino.pantalla) &&
-            destino.cliente &&
-            estado.cliente &&
-            destino.cliente.id === estado.cliente.id;
-        const dejaElPedido = PANTALLAS_PEDIDO.includes(estado.pantalla) && !mismoCliente;
-        if (dejaElPedido && estado.pedido.size) {
-            const vaciar = await confirmar(preguntaVaciar(), "Sí, vaciar el pedido", "No, seguir con el pedido");
-            if (!vaciar) {
+        const sale = saleDeLaOperacion(destino);
+        const pendiente = sale ? pendienteAqui() : null;
+        if (pendiente) {
+            destinoEnPregunta = evento.state || { pantalla: "inicio", modo: null, zona: null, cliente: null, nivel: 0 };
+            const respuesta = await preguntarAntesDeSalir(pendiente);
+            destinoEnPregunta = null;
+            if (respuesta !== "no") {
                 history.pushState(fotoHistorial(), "");
+                if (respuesta === "si") {
+                    hacerAhora(pendiente);
+                }
                 return;
             }
         }
-        if (dejaElPedido) {
-            vaciarPedido();
+        if (sale && PANTALLAS_PEDIDO.includes(estado.pantalla)) {
+            vaciarPedido(); // "Salir sin enviar": el pedido se pierde
         }
         Object.assign(estado, {
             pantalla: destino.pantalla,
@@ -268,11 +427,16 @@
         if (estado.pantalla === "inicio" || inicioBloqueado() || yendoAlInicio) {
             return;
         }
-        // Solo el pedido se pierde: los pesos de una entrega y el monto de un
-        // cobro se conservan en memoria (como al regresar).
-        if (PANTALLAS_PEDIDO.includes(estado.pantalla) && estado.pedido.size) {
-            const vaciar = await confirmar(preguntaVaciar(), "Sí, vaciar e ir al inicio", "No, seguir con el pedido");
-            if (!vaciar) {
+        // Con algo sin enviar, confirmar o registrar, pregunta antes. Al salir,
+        // solo el pedido se pierde: lo capturado de una entrega o un cobro se
+        // conserva en memoria (y el Inicio lo recuerda).
+        const pendiente = pendienteAqui();
+        if (pendiente) {
+            const respuesta = await preguntarAntesDeSalir(pendiente);
+            if (respuesta === "si") {
+                hacerAhora(pendiente);
+            }
+            if (respuesta !== "no") {
                 return;
             }
         }
@@ -340,8 +504,8 @@
 
     function avisarAntesDeSalir(evento) {
         // Recargar o cerrar la página perdería el pedido, lo capturado de una
-        // entrega o el monto de un cobro.
-        if (estado.pedido.size || hayEntregaSinConfirmar() || hayCobroSinConfirmar()) {
+        // entrega o de un cobro.
+        if (pendientes().length) {
             evento.preventDefault();
             evento.returnValue = "";
         }
@@ -351,6 +515,27 @@
 
     function medirBarra() {
         document.documentElement.style.setProperty("--alto-barra", `${ui.barra.offsetHeight}px`);
+        medirBarraAbajo();
+    }
+
+    function medirBarraAbajo() {
+        // El contenido deja abajo el alto real de la franja (con su aviso), para
+        // que nada quede tapado; sin franja, captura.css deja 16px.
+        const alto = ui.barraPedido.hidden ? 0 : ui.barraPedido.offsetHeight;
+        document.documentElement.style.setProperty("--alto-barra-abajo", `${alto}px`);
+    }
+
+    function ponerBarraAbajo(accion, conteo, deshabilitado, conAviso) {
+        // Franja de abajo de las tres operaciones: el verbo grande, debajo el
+        // conteo o el total y, en la pantalla final, el aviso de que falta un paso.
+        ui.pedidoAccion.textContent = accion;
+        ui.pedidoConteo.textContent = conteo;
+        ui.pedidoConteo.hidden = !conteo;
+        ui.btnPedido.disabled = deshabilitado;
+        ui.faltaPaso.textContent = conAviso ? TEXTOS_PENDIENTE[operacionActual()].falta : "";
+        ui.faltaPaso.hidden = !conAviso;
+        actualizarInicio();
+        medirBarraAbajo();
     }
 
     function ponerTitulo(titulo, subtitulo) {
@@ -444,7 +629,8 @@
         ui.botonesBarra.hidden = ui.regresar.hidden && ui.inicio.hidden;
         actualizarInicio();
         ui.categorias.hidden = estado.pantalla !== "productos";
-        ui.barraPedido.hidden = !PANTALLAS_PEDIDO.concat(PANTALLAS_ENTREGA).includes(estado.pantalla);
+        ui.barraPedido.hidden = !PANTALLAS_CON_BARRA.includes(estado.pantalla);
+        medirBarraAbajo();
         window.scrollTo(0, 0);
         if (estado.pantalla === "inicio") {
             dibujarInicio();
@@ -499,10 +685,39 @@
         );
     }
 
+    function recordatorios() {
+        // Entregas y cobros capturados que no están en Odoo (el pedido nunca
+        // queda en memoria al salir). Máximo 2 renglones, y "y N más".
+        const lista = pendientes().filter((p) => p.operacion !== "pedido");
+        if (!lista.length) {
+            return null;
+        }
+        const MAXIMO = 2;
+        return el(
+            "div",
+            { class: "recordatorios", role: "alert" },
+            ...lista.slice(0, MAXIMO).map((p) =>
+                el(
+                    "button",
+                    {
+                        type: "button",
+                        class: "recordatorio",
+                        "data-operacion": p.operacion,
+                        onclick: () => continuarCon(p),
+                    },
+                    `⚠ ${TEXTOS_PENDIENTE[p.operacion].recordatorio}: ${p.cliente.nombre} · `,
+                    el("span", { class: "recordatorio-continuar", text: "Continuar ›" })
+                )
+            ),
+            lista.length > MAXIMO ? el("p", { class: "recordatorio-mas", text: `y ${lista.length - MAXIMO} más` }) : null
+        );
+    }
+
     function dibujarInicio() {
         ponerTitulo("Captura");
         nuevaVista();
         mostrar(
+            recordatorios(),
             el("p", { class: "pregunta", text: "¿Qué vas a hacer?" }),
             lista([
                 botonModo("pedido", () => irA("zonas", { modo: "pedido", zona: null, cliente: null })),
@@ -610,11 +825,26 @@
                         type: "button",
                         class: "btn",
                         text: cliente.nombre,
-                        onclick: () => irA(entrega ? "entrega" : cobrando ? "cobro" : "productos", { cliente }),
+                        onclick: () => abrirCliente(cliente, entrega ? "entrega" : cobrando ? "cobro" : "productos"),
                     })
                 )
             )
         );
+    }
+
+    async function abrirCliente(cliente, pantalla) {
+        if (pantalla === "cobro" && !confirmando) {
+            // Cobrarle a otro cliente con un cobro sin registrar: se avisa antes.
+            const otro = pendientes().find((p) => p.operacion === "cobro" && p.cliente.id !== cliente.id);
+            const respuesta = otro ? await preguntarAntesDeSalir(otro) : "no";
+            if (respuesta === "si") {
+                hacerAhora(otro);
+            }
+            if (respuesta !== "no") {
+                return;
+            }
+        }
+        irA(pantalla, { cliente });
     }
 
     // === Pantalla: Productos ===
@@ -807,19 +1037,12 @@
     function actualizarPedido() {
         const productos = totalPedido();
         const enResumen = estado.pantalla === "resumen";
-        ui.pedidoConteo.textContent = productos
-            ? `${plural(productos, "producto", "productos")} en el pedido`
-            : "Pedido vacío";
-        ui.pedidoAccion.hidden = !productos;
-        if (estado.enviando) {
-            ui.pedidoAccion.textContent = "Enviando…";
-        } else {
-            ui.pedidoAccion.textContent = enResumen ? "✓ Enviar pedido" : "Revisar pedido ›";
-        }
-        ui.btnPedido.disabled = !productos || estado.enviando;
-        actualizarInicio();
-        ui.barraPedido.classList.toggle("con-productos", productos > 0);
-        ui.barraPedido.classList.toggle("para-enviar", enResumen && productos > 0);
+        ponerBarraAbajo(
+            estado.enviando ? "ENVIANDO…" : enResumen ? "✓ ENVIAR PEDIDO" : "REVISAR PEDIDO ›",
+            productos ? `${plural(productos, "producto", "productos")} en el pedido` : "Pedido vacío",
+            !productos || estado.enviando,
+            enResumen && productos > 0
+        );
     }
 
     function alTocarBarraPedido() {
@@ -831,6 +1054,8 @@
             revisarEntrega();
         } else if (estado.pantalla === "entrega-resumen") {
             confirmarEntrega();
+        } else if (estado.pantalla === "cobro-confirmar") {
+            registrarCobro();
         }
     }
 
@@ -868,7 +1093,7 @@
             return;
         }
         mostrar(
-            el("p", { class: "pregunta", text: "Revisa el pedido" }),
+            el("p", { class: "pregunta", text: "Falta enviar el pedido" }),
             lista(
                 lineas.map(({ producto, cantidad }) =>
                     el(
@@ -929,15 +1154,22 @@
         dibujar();
     }
 
-    // === Pantalla: Pedido enviado ===
+    // === Pantallas de éxito (pedido enviado, entrega confirmada, cobro registrado) ===
 
-    function dibujarEnviado() {
-        nuevaVista();
-        const envio = estado.envio;
-        ponerTitulo("Pedido enviado", estado.zona && estado.zona.nombre);
-        if (!envio || !estado.zona) {
+    function pantallaExito(titulo, detalles) {
+        // Bloque verde inconfundible: palomeo grande y lo que se hizo en
+        // mayúsculas. Sin datos (atrás o adelante), solo el encabezado y
+        // "Ir a zonas"; con datos, debajo los detalles y a dónde seguir.
+        const encabezado = el(
+            "div",
+            { class: "exito", role: "status" },
+            el("p", { class: "exito-marca", "aria-hidden": "true", text: "✓" }),
+            el("p", { class: "exito-titulo", text: titulo }),
+            ...(detalles || [])
+        );
+        if (!detalles || !estado.zona) {
             mostrar(
-                aviso("Pedido enviado."),
+                encabezado,
                 el("button", {
                     type: "button",
                     class: "btn btn-primario",
@@ -948,16 +1180,7 @@
             return;
         }
         mostrar(
-            el(
-                "div",
-                { class: "enviado", role: "status" },
-                el("p", { class: "enviado-marca", "aria-hidden": "true", text: "✓" }),
-                el("p", { class: "enviado-titulo", text: `Pedido ${envio.nombre} enviado` }),
-                el("p", {
-                    class: "enviado-detalle",
-                    text: `${envio.cliente} · ${plural(envio.productos, "producto", "productos")}`,
-                })
-            ),
+            encabezado,
             lista([
                 el("button", {
                     type: "button",
@@ -972,6 +1195,24 @@
                     onclick: () => irA("zonas", { zona: null, cliente: null }),
                 }),
             ])
+        );
+    }
+
+    // === Pantalla: Pedido enviado ===
+
+    function dibujarEnviado() {
+        nuevaVista();
+        const envio = estado.envio;
+        ponerTitulo("Pedido enviado", estado.zona && estado.zona.nombre);
+        pantallaExito(
+            "PEDIDO ENVIADO",
+            envio && [
+                el("p", { class: "enviado-titulo", text: `Pedido ${envio.nombre}` }),
+                el("p", {
+                    class: "enviado-detalle",
+                    text: `${envio.cliente} · ${plural(envio.productos, "producto", "productos")}`,
+                }),
+            ]
         );
     }
 
@@ -990,6 +1231,8 @@
         const id = estado.cliente.id;
         if (!capturas.has(id)) {
             capturas.set(id, {
+                cliente: estado.cliente, // para recordarla en Inicio y volver a ella
+                zona: estado.zona,
                 pendiente: null, // respuesta de /entrega/pendiente
                 pesos: new Map(), // move_id -> texto tecleado
                 noLlevo: new Set(), // claves de renglón marcadas "No se lo llevó"
@@ -1046,18 +1289,50 @@
         return rollosPendientes(captura).length + productosNormales(captura).length;
     }
 
-    function hayEntregaSinConfirmar() {
-        // Algún peso escrito, "No se lo llevó" o cantidad cambiada sin confirmar.
-        for (const captura of capturas.values()) {
-            const conPeso = [...captura.pesos.values()].some((texto) => texto.trim());
-            const cantidadCambiada =
-                captura.pendiente &&
-                productosNormales(captura).some((producto) => captura.cantidades.get(producto.id) !== producto.cantidad);
-            if (conPeso || captura.noLlevo.size || cantidadCambiada) {
-                return true;
+    function entregaPendiente(captura) {
+        // Ya llegó al Resumen (aunque no haya cambiado nada), o tiene algún peso
+        // escrito, "No se lo llevó" o cantidad cambiada sin confirmar.
+        const conPeso = [...captura.pesos.values()].some((texto) => texto.trim());
+        const cantidadCambiada =
+            captura.pendiente &&
+            productosNormales(captura).some((producto) => captura.cantidades.get(producto.id) !== producto.cantidad);
+        return Boolean(captura.vista || conPeso || captura.noLlevo.size || cantidadCambiada);
+    }
+
+    function podarCaptura(captura) {
+        // Al recargar lo pendiente, se borra lo capturado de lo que ya no está
+        // pendiente (otra persona lo validó o canceló): no son entregas por
+        // confirmar. Si algo se borró, la revisión anterior ya no vale.
+        const movimientos = new Set();
+        const claves = new Set();
+        const productos = new Set();
+        for (const producto of captura.pendiente.productos) {
+            if (producto.es_peso_variable) {
+                for (const movimiento of producto.movimientos) {
+                    movimientos.add(movimiento.move_id);
+                    claves.add(claveRollo(movimiento));
+                }
+            } else {
+                productos.add(producto.id);
+                claves.add(claveProducto(producto));
             }
         }
-        return false;
+        let podado = false;
+        const podar = (coleccion, sigue) => {
+            for (const clave of [...coleccion.keys()]) {
+                if (!sigue.has(clave)) {
+                    coleccion.delete(clave);
+                    podado = true;
+                }
+            }
+        };
+        podar(captura.pesos, movimientos);
+        podar(captura.problemas, movimientos);
+        podar(captura.noLlevo, claves);
+        podar(captura.cantidades, productos);
+        if (podado || !captura.pendiente.productos.length) {
+            capturaCambiada(captura);
+        }
     }
 
     function capturaCambiada(captura) {
@@ -1117,6 +1392,8 @@
             return;
         }
         captura.pendiente = pendiente;
+        captura.zona = estado.zona;
+        podarCaptura(captura);
         ajustarCantidades(captura);
         dibujarListaEntrega();
     }
@@ -1315,27 +1592,28 @@
 
     function actualizarBarraEntrega() {
         const captura = estado.cliente && capturas.get(estado.cliente.id);
-        actualizarInicio();
-        ui.pedidoAccion.hidden = false;
-        ui.barraPedido.classList.add("con-productos");
         if (estado.pantalla === "entrega-resumen") {
             const vista = captura && captura.vista;
-            ui.pedidoConteo.textContent = vista ? `Total ${vista.total_texto}` : "";
-            ui.pedidoAccion.textContent = estado.enviando ? "Confirmando…" : "✓ Confirmar entrega";
-            ui.btnPedido.disabled = !vista || estado.enviando;
-            ui.barraPedido.classList.add("para-enviar");
+            ponerBarraAbajo(
+                estado.enviando ? "CONFIRMANDO…" : "✓ CONFIRMAR ENTREGA",
+                vista ? `Total ${vista.total_texto}` : "",
+                !vista || estado.enviando,
+                Boolean(vista)
+            );
             return;
         }
-        ui.barraPedido.classList.remove("para-enviar");
         const cargado = captura && captura.pendiente;
         const total = cargado ? totalRenglones(captura) : 0;
         const llevados = cargado
             ? rollosPendientes(captura).filter(({ movimiento }) => !captura.noLlevo.has(claveRollo(movimiento))).length +
               productosNormales(captura).filter((producto) => !captura.noLlevo.has(claveProducto(producto))).length
             : 0;
-        ui.pedidoConteo.textContent = !cargado ? "Cargando…" : `Se lleva ${llevados} de ${plural(total, "renglón", "renglones")}`;
-        ui.pedidoAccion.textContent = estado.revisando ? "Revisando…" : "Revisar entrega ›";
-        ui.btnPedido.disabled = !total || estado.revisando;
+        ponerBarraAbajo(
+            estado.revisando ? "REVISANDO…" : "REVISAR ENTREGA ›",
+            !cargado ? "Cargando…" : `Se lleva ${llevados} de ${plural(total, "renglón", "renglones")}`,
+            !total || estado.revisando,
+            false
+        );
     }
 
     function senalarPrimerProblema() {
@@ -1459,7 +1737,7 @@
         ];
         const noSeLlevo = noLlevados(captura);
         mostrar(
-            el("p", { class: "pregunta", text: "Revisa la entrega" }),
+            el("p", { class: "pregunta", text: "Falta confirmar la entrega" }),
             lineas.length ? lista(lineas) : aviso("No se lleva nada."),
             noSeLlevo.length ? el("p", { class: "seccion-titulo", text: "No se lo llevó" }) : null,
             noSeLlevo.length ? lista(noSeLlevo.map((texto) => el("div", { class: "resumen-no-llevo", text: texto }))) : null,
@@ -1481,23 +1759,23 @@
             return;
         }
         if (!vista.rollos.length && !vista.productos.length) {
-            const seguro = await confirmar(
-                `${estado.cliente.nombre} no se lleva nada. Se cancelarán todas sus entregas pendientes.`,
-                "Sí, cancelar sus entregas",
-                "No, regresar"
-            );
-            if (!seguro) {
+            const seguro = await confirmar({
+                texto: `${estado.cliente.nombre} no se lleva nada. Se cancelarán todas sus entregas pendientes.`,
+                si: "Sí, cancelar sus entregas",
+                no: "No, regresar",
+            });
+            if (seguro !== "si") {
                 return;
             }
         }
         for (const rollo of vista.rollos) {
             for (const advertencia of rollo.advertencias) {
-                const bien = await confirmar(
-                    `${rollo.nombre}: ${rollo.peso.toFixed(3)} kg. ${advertencia}`,
-                    "El peso está bien",
-                    "Corregir el peso"
-                );
-                if (!bien) {
+                const bien = await confirmar({
+                    texto: `${rollo.nombre}: ${rollo.peso.toFixed(3)} kg. ${advertencia}`,
+                    si: "El peso está bien",
+                    no: "Corregir el peso",
+                });
+                if (bien !== "si") {
                     captura.problemas.set(rollo.move_id, [advertencia]);
                     captura.aviso = "Corrige el peso del rollo marcado.";
                     history.back(); // a la lista, con el rollo señalado
@@ -1556,23 +1834,9 @@
         nuevaVista();
         const entregado = estado.entregado;
         ponerTitulo("Entrega confirmada", estado.zona && estado.zona.nombre);
-        if (!entregado || !estado.zona) {
-            mostrar(
-                aviso("Entrega confirmada."),
-                el("button", {
-                    type: "button",
-                    class: "btn btn-primario",
-                    text: "Ir a zonas",
-                    onclick: () => irA("zonas", { zona: null, cliente: null }),
-                })
-            );
-            return;
-        }
-        mostrar(
-            el(
-                "div",
-                { class: "enviado", role: "status" },
-                el("p", { class: "enviado-marca", "aria-hidden": "true", text: "✓" }),
+        pantallaExito(
+            "ENTREGA CONFIRMADA",
+            entregado && [
                 el("p", { class: "cobrar", text: `Cobrar: ${entregado.total_texto}` }),
                 el("p", { class: "enviado-detalle", text: entregado.cliente }),
                 el(
@@ -1585,22 +1849,8 @@
                                 (entrega.estado === "cancelada" ? " (cancelada)" : ""),
                         })
                     )
-                )
-            ),
-            lista([
-                el("button", {
-                    type: "button",
-                    class: "btn btn-primario",
-                    text: `Siguiente cliente de ${estado.zona.nombre}`,
-                    onclick: () => irA("clientes", { cliente: null }),
-                }),
-                el("button", {
-                    type: "button",
-                    class: "btn btn-secundario",
-                    text: "Cambiar de zona",
-                    onclick: () => irA("zonas", { zona: null, cliente: null }),
-                }),
-            ])
+                ),
+            ]
         );
     }
 
@@ -1608,17 +1858,19 @@
     // === Modo Cobro ===
     // =====================================================================
 
-    // El cobro del cliente abierto: lo que devolvió /cobro/detalle, cómo pagó
-    // y el monto tecleado. Se conserva al ir y volver entre el detalle y la
-    // confirmación; se borra al registrar el cobro o al cambiar de cliente.
-    let cobro = null;
+    // El cobro de cada cliente: lo que devolvió /cobro/detalle, cómo pagó y el
+    // monto tecleado. Se conserva mientras la página esté abierta (al ir y
+    // volver entre el detalle y la confirmación, o al cobrarle a otro); se
+    // borra al registrar el cobro.
+    const cobros = new Map(); // id de cliente -> cobro
     const TIPOS_COBRO = { todo: "Pagó todo", parte: "Pagó una parte", nada: "No pagó hoy" };
 
     function cobroActual() {
         const id = estado.cliente.id;
-        if (!cobro || cobro.clienteId !== id) {
-            cobro = {
-                clienteId: id,
+        if (!cobros.has(id)) {
+            cobros.set(id, {
+                cliente: estado.cliente, // para recordarlo en Inicio y volver a él
+                zona: estado.zona,
                 detalle: null, // respuesta de /cobro/detalle
                 tipo: null, // "todo" | "parte" | "nada"
                 montoTexto: "", // lo tecleado en "Pagó una parte"
@@ -1626,13 +1878,11 @@
                 aviso: null, // mensaje arriba del detalle
                 error: null, // mensaje en la confirmación
                 mostrarProblema: false, // se intentó registrar un monto inválido
-            };
+            });
         }
+        const cobro = cobros.get(id);
+        cobro.zona = estado.zona;
         return cobro;
-    }
-
-    function hayCobroSinConfirmar() {
-        return Boolean(cobro && cobro.tipo === "parte" && cobro.montoTexto.trim());
     }
 
     function redondearCentavos(n) {
@@ -1788,8 +2038,8 @@
     function dibujarConfirmarCobro() {
         ponerTitulo(estado.cliente.nombre, estado.zona && estado.zona.nombre);
         nuevaVista();
-        actualizarInicio();
         const c = cobroActual();
+        actualizarBarraCobro();
         if (!c.detalle || !c.tipo) {
             mostrar(
                 aviso("Toca Regresar para ver lo que debe."),
@@ -1798,7 +2048,10 @@
             return;
         }
         const total = c.detalle.total_a_cobrar;
-        const nodos = [el("p", { class: "pregunta", text: TIPOS_COBRO[c.tipo] })];
+        const nodos = [
+            el("p", { class: "pregunta", text: "Falta registrar el cobro" }),
+            el("p", { class: "cobro-tipo", text: TIPOS_COBRO[c.tipo] }),
+        ];
         let campo = null;
         if (c.tipo === "parte") {
             campo = el("input", {
@@ -1829,17 +2082,23 @@
                 lineaCobro("Queda debiendo", null, "", "cobro-debe"),
             ]),
             c.error ? el("p", { class: "error-envio", role: "alert", text: c.error }) : null,
-            el("button", {
-                type: "button",
-                class: "btn btn-primario btn-registrar-cobro",
-                text: estado.enviando ? "Registrando…" : "✓ Registrar cobro",
-                disabled: estado.enviando ? "disabled" : null,
-                onclick: registrarCobro,
-            }),
             el("p", { class: "nota", text: "Para cambiar algo, toca Regresar." })
         );
         mostrar(...nodos);
         actualizarEcoMonto();
+    }
+
+    function actualizarBarraCobro() {
+        // "✓ REGISTRAR COBRO" en la franja de abajo, con el efectivo que se registrará.
+        const c = cobroActual();
+        const listo = Boolean(c.detalle && c.tipo);
+        const monto = listo ? montoDelCobro(c) : null;
+        ponerBarraAbajo(
+            estado.enviando ? "REGISTRANDO…" : "✓ REGISTRAR COBRO",
+            !listo ? "" : monto === null ? "Falta escribir cuánto pagó" : `Efectivo recibido: ${dinero.format(monto)}`,
+            !listo || estado.enviando,
+            listo
+        );
     }
 
     function actualizarEcoMonto() {
@@ -1847,6 +2106,7 @@
         const c = cobroActual();
         const total = c.detalle.total_a_cobrar;
         const monto = montoDelCobro(c);
+        actualizarBarraCobro();
         const recibido = ui.contenido.querySelector(".cobro-recibido .resumen-importe");
         const debe = ui.contenido.querySelector(".cobro-debe .resumen-importe");
         recibido.textContent = monto === null ? "—" : dinero.format(monto);
@@ -1882,12 +2142,12 @@
             return;
         }
         if (c.tipo === "nada") {
-            const seguro = await confirmar(
-                `La deuda de ${dinero.format(c.detalle.total_a_cobrar)} quedará pendiente.`,
-                "Sí, no pagó hoy",
-                "No, regresar"
-            );
-            if (!seguro || estado.enviando) {
+            const seguro = await confirmar({
+                texto: `La deuda de ${dinero.format(c.detalle.total_a_cobrar)} quedará pendiente.`,
+                si: "Sí, no pagó hoy",
+                no: "No, regresar",
+            });
+            if (seguro !== "si" || estado.enviando) {
                 return;
             }
         }
@@ -1926,7 +2186,7 @@
             history.back();
             return;
         }
-        cobro = null;
+        cobros.delete(cliente.id);
         estado.cobrado = resultado;
         estado.pantalla = "cobrado";
         // Reemplaza la confirmación en el historial: "atrás" ya no regresa a ella.
@@ -1940,23 +2200,9 @@
         nuevaVista();
         const cobrado = estado.cobrado;
         ponerTitulo("Cobro registrado", estado.zona && estado.zona.nombre);
-        if (!cobrado || !estado.zona) {
-            mostrar(
-                aviso("Cobro registrado."),
-                el("button", {
-                    type: "button",
-                    class: "btn btn-primario",
-                    text: "Ir a zonas",
-                    onclick: () => irA("zonas", { zona: null, cliente: null }),
-                })
-            );
-            return;
-        }
-        mostrar(
-            el(
-                "div",
-                { class: "enviado", role: "status" },
-                el("p", { class: "enviado-marca", "aria-hidden": "true", text: "✓" }),
+        pantallaExito(
+            "COBRO REGISTRADO",
+            cobrado && [
                 el("p", { class: "cobrar", text: `Cobrado: ${dinero.format(cobrado.monto_recibido)}` }),
                 cobrado.saldo_pendiente > 0
                     ? el("p", { class: "queda-debiendo", text: `Queda debiendo: ${dinero.format(cobrado.saldo_pendiente)}` })
@@ -1964,22 +2210,8 @@
                 el("p", { class: "enviado-detalle", text: `${cobrado.cliente} · ${TIPOS_COBRO[cobrado.tipo]}` }),
                 cobrado.facturas.length
                     ? el("ul", { class: "folios" }, ...cobrado.facturas.map((f) => el("li", { text: `Factura ${f.folio}` })))
-                    : null
-            ),
-            lista([
-                el("button", {
-                    type: "button",
-                    class: "btn btn-primario",
-                    text: `Siguiente cliente de ${estado.zona.nombre}`,
-                    onclick: () => irA("clientes", { cliente: null }),
-                }),
-                el("button", {
-                    type: "button",
-                    class: "btn btn-secundario",
-                    text: "Cambiar de zona",
-                    onclick: () => irA("zonas", { zona: null, cliente: null }),
-                }),
-            ])
+                    : null,
+            ]
         );
     }
 
@@ -1987,9 +2219,11 @@
     // === Acomodo de entregas (solo lectura) ===
     // =====================================================================
 
-    // Los pedidos del día operativo con algo pendiente, por zona y en el orden
-    // en que se levantaron: el primero se entrega primero (va hasta arriba del
-    // carrito). Cada vez que se abre se piden datos frescos al servidor.
+    // Los pedidos del día operativo con algo pendiente, por zona, en el orden en
+    // que se carga el carrito (lo decide el servidor): del más reciente, que va
+    // hasta el fondo, al más antiguo; el número es la posición de entrega (el 1
+    // se entrega primero y queda hasta arriba). Cada vez que se abre se piden
+    // datos frescos al servidor.
     async function dibujarAcomodo() {
         ponerTitulo("Acomodo de entregas");
         const vista = nuevaVista();
@@ -2018,6 +2252,10 @@
             "section",
             { class: "acomodo-zona" },
             el("h2", { class: "acomodo-zona-nombre", text: zona.nombre }),
+            el("p", {
+                class: "acomodo-instruccion",
+                text: "Carga en este orden: el primero de la lista va hasta el fondo del carrito",
+            }),
             el(
                 "div",
                 { class: "acomodo-columnas", "aria-hidden": "true" },

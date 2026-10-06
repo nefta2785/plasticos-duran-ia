@@ -53,9 +53,32 @@ efectivo. **Esa factura también está saldada**: el cliente ya no la debe.
 ## 6. Otras reglas importantes
 
 **Para volver a la pantalla de Pedido, Entrega y Cobro, toquen INICIO** (arriba a la derecha),
-desde cualquier pantalla. Si hay un pedido sin enviar, la app pregunta antes de vaciarlo. Los
-pesos de una entrega y lo escrito en un cobro siguen ahí al volver al cliente, mientras no
-cierren ni recarguen la página.
+desde cualquier pantalla.
+
+**Nada queda en Odoo hasta tocar el botón verde de abajo** (✓ ENVIAR PEDIDO, ✓ CONFIRMAR
+ENTREGA o ✓ REGISTRAR COBRO). Mientras falte, la pantalla dice arriba "Falta enviar el pedido"
+(o "Falta confirmar la entrega", "Falta registrar el cobro") y, junto al botón, un aviso
+amarillo "Falta un paso: … todavía NO se ha …". Cuando sí quedó, aparece un palomeo verde
+grande con **PEDIDO ENVIADO**, **ENTREGA CONFIRMADA** o **COBRO REGISTRADO**.
+
+Si tocan INICIO, Regresar o "atrás" con algo sin enviar, confirmar o registrar, la app pregunta
+antes de salir (también al abrir el cobro de otro cliente con un cobro sin registrar):
+
+- **Botón verde de arriba** ("✓ Enviar pedido ahora", "✓ Confirmar entrega ahora",
+  "✓ Registrar cobro ahora"): lo hace en ese momento y se queda en la pantalla de éxito. Si
+  todavía no están en la pantalla final, dice "Revisar y enviar" (o "Revisar y confirmar",
+  "Revisar y registrar") y los lleva a ella. Si no hay señal o Odoo da un error, se quedan en la
+  pantalla con el mensaje en rojo; tocar otra vez no duplica nada.
+- **"Salir sin enviar"** (pedido): el pedido **se pierde**.
+- **"Salir sin confirmar" / "Salir sin registrar"** (entrega y cobro): lo capturado (pesos,
+  cantidades, cómo pagó, el monto) **se conserva**, pero **NO queda registrado en Odoo**. En
+  Inicio aparece un aviso amarillo, por ejemplo "⚠ Entrega sin confirmar: Doña Carmen ·
+  Continuar ›"; tocarlo los regresa a esa entrega o cobro. Se ven hasta dos avisos y "y N más".
+- **Tocar fuera de la ventana** (la parte oscura): se quedan donde estaban.
+
+Regresar a la pantalla anterior para cambiar algo (por ejemplo del resumen a la lista) no
+pregunta. Lo capturado se pierde si cierran o recargan la página, o si Android cierra Chrome:
+**no salgan sin tocar el botón verde.**
 
 **Cada operación tiene su nombre y su color arriba**, en todas sus pantallas: **Pedido** azul,
 **Entrega** verde, **Cobro** naranja y **Acomodo** morado. Los botones de la pantalla de inicio
@@ -65,8 +88,10 @@ tienen los mismos colores.
 el "−" quita el producto del pedido. Tocar el nombre del producto no hace nada.
 
 **Para acomodar el carrito, toquen "Acomodo de entregas"** en la pantalla de inicio. Salen los
-pedidos que falta entregar, separados por zona y en el orden en que se levantaron: el número 1
-se entrega primero y va hasta arriba del carrito. Cuentan los pedidos levantados desde las 8 de
+pedidos que falta entregar, separados por zona y **del último pedido al primero, en el orden en
+que se carga el carrito**: el primero de la lista se carga primero y va hasta el fondo. El
+número de cada pedido es su turno de entrega: el 1 (el último de la lista) se entrega primero y
+queda hasta arriba del carrito. Cuentan los pedidos levantados desde las 8 de
 la noche del día anterior; los de después de las 8 de la noche salen al día siguiente.
 
 **Si en el celular llegan a Odoo por error**, toquen la app **Captura** en el menú de Odoo:

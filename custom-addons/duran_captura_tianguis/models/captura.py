@@ -845,10 +845,13 @@ class DuranCaptura(models.AbstractModel):
     def get_acomodo(self):
         """ Pedidos del día operativo con algo pendiente de entregar (misma
         regla que el modo Entrega), agrupados por zona, para acomodar el carrito
-        en el orden de entrega. Solo lectura.
+        en el orden en que se carga. Solo lectura.
 
-        - Pedidos: del más antiguo al más reciente (`date_order`, desempate por
-          id); la posición reinicia en 1 en cada zona.
+        - Posición: el orden de entrega, del más antiguo al más reciente
+          (`date_order`, desempate por id); reinicia en 1 en cada zona.
+        - Pedidos: en el orden en que se cargan al carrito, que se llena de
+          atrás hacia adelante: del más reciente (se carga primero, hasta el
+          fondo) al más antiguo (posición 1, hasta arriba).
         - Zona de cada pedido: la de la orden; si no tiene (orden hecha en
           Odoo) y el cliente tiene una sola etiqueta, esa; si no, "Sin zona".
           Zonas en el orden de su pedido más antiguo; "Sin zona" al final.
@@ -917,12 +920,14 @@ class DuranCaptura(models.AbstractModel):
                     for linea in pedido["productos"].values()
                 ],
             })
+        # Las posiciones ya están en orden de entrega; la lista va al revés, en
+        # el orden de carga. Las zonas siguen en el orden de su pedido más antiguo.
         resultado = [
-            {"id": grupo["zona"].id, "nombre": grupo["zona"].display_name, "pedidos": grupo["pedidos"]}
+            {"id": grupo["zona"].id, "nombre": grupo["zona"].display_name, "pedidos": grupo["pedidos"][::-1]}
             for grupo in zonas.values()
         ]
         if sin_zona:
-            resultado.append({"id": False, "nombre": _("Sin zona"), "pedidos": sin_zona})
+            resultado.append({"id": False, "nombre": _("Sin zona"), "pedidos": sin_zona[::-1]})
         return resultado
 
     # === Modo Cobro === #
