@@ -65,6 +65,11 @@ async function pasoZonas() {
     check("Zona vacía: mensaje", txt(".aviso"), "Esta zona no tiene clientes");
     checkOperacion("pedido", "zona vacía de Pedido");
     check("Zona vacía: botón para regresar", !!boton("‹ Regresar a zonas"), true);
+    check(
+        "Zona vacía de Pedido: «+ Cliente nuevo» entre el aviso y «Regresar a zonas»",
+        [txt(".btn-cliente-nuevo"), q(".aviso").nextElementSibling === q(".btn-cliente-nuevo"), q(".btn-cliente-nuevo").nextElementSibling === boton("‹ Regresar a zonas")],
+        ["+ Cliente nuevo", true, true]
+    );
     boton("‹ Regresar a zonas").click();
     await espera(120);
     check("Zona vacía: regresar vuelve a Zonas", txt("#titulo"), "Zonas");
@@ -83,6 +88,19 @@ async function pasoClientes() {
         ["Doña Carmen", "<b>Cliente con HTML</b>", "Cliente con historial", "Tortillería La Guadalupana de Doña Lupita"]
     );
     check("Clientes: no se crea ningún <b> desde los datos", qa(".lista b").length, 0);
+    const nuevo = q(".btn-cliente-nuevo");
+    check(
+        "Clientes de Pedido: «+ Cliente nuevo» verde de 64px, a todo lo ancho, arriba de la lista",
+        [
+            nuevo && nuevo.textContent,
+            nuevo && nuevo.offsetHeight >= 64,
+            nuevo && getComputedStyle(nuevo).backgroundColor,
+            nuevo && nuevo.offsetWidth === q(".lista").offsetWidth,
+            nuevo && nuevo.getBoundingClientRect().bottom <= q(".lista").getBoundingClientRect().top,
+            nuevo && nuevo.getBoundingClientRect().top >= q(".pregunta").getBoundingClientRect().bottom,
+        ],
+        ["+ Cliente nuevo", true, VERDE, true, true, true]
+    );
     checkInicio("Clientes");
     checkOperacion("pedido", "Clientes de Pedido");
 }
@@ -589,6 +607,7 @@ async function pasoEntregaClientes() {
     boton("Guadalupana").click();
     await espera(80);
     check("Entrega: zona sin pendientes", txt(".aviso"), "Nadie de esta zona tiene entregas pendientes");
+    check("Entrega, zona sin pendientes: sin «+ Cliente nuevo»", q(".btn-cliente-nuevo"), null);
     checkOperacion("entrega", "zona sin entregas pendientes");
     await regresar();
     boton("Bosques").click();
@@ -598,6 +617,7 @@ async function pasoEntregaClientes() {
         [qa(".lista .btn").map((b) => b.textContent), llamadasA("entrega/clientes")],
         [["Doña Carmen", "Cliente con historial"], 2]
     );
+    check("Clientes de Entrega: sin «+ Cliente nuevo»", q(".btn-cliente-nuevo"), null);
     boton("Doña Carmen").click();
     await espera(120);
 }
@@ -1042,6 +1062,7 @@ async function pasoCobroClientes() {
     boton("Guadalupana").click();
     await espera(80);
     check("Cobro: zona sin nada por cobrar", txt(".aviso"), "Nadie de esta zona tiene algo por cobrar");
+    check("Cobro, zona sin nada por cobrar: sin «+ Cliente nuevo»", q(".btn-cliente-nuevo"), null);
     checkOperacion("cobro", "zona sin nada por cobrar");
     await regresar();
     boton("Bosques").click();
@@ -1052,6 +1073,7 @@ async function pasoCobroClientes() {
         [["Doña Carmen", "Don Beto", "Mario fruta", "Cliente con historial"], 2]
     );
     checkOperacion("cobro", "Clientes de Cobro");
+    check("Clientes de Cobro: sin «+ Cliente nuevo»", q(".btn-cliente-nuevo"), null);
     check("Clientes de Cobro: la pregunta dice la operación, sin subtítulo", [txt(".pregunta"), q("#subtitulo").hidden], ["¿A quién le vas a cobrar?", true]);
 }
 
@@ -1628,6 +1650,187 @@ async function pasoTarjetasGrandes() {
     check("Al salir con INICIO se vacía el pedido grande", [txt("#titulo"), pideConfirmarAlSalir()], ["Captura", false]);
 }
 
+// === Cliente nuevo (solo Pedido) ===
+
+async function escribirNombre(texto) {
+    const campo = q("#cliente-nombre");
+    campo.value = texto;
+    campo.dispatchEvent(new Event("input", { bubbles: true }));
+    await espera(5);
+}
+
+async function guardarConEnter() {
+    // Lo que hace "Enter" (o "Listo") del teclado: enviar el formulario.
+    q(".form-cliente").requestSubmit();
+    await espera(150);
+}
+
+const avisosParecidos = () =>
+    qa(".parecido-aviso").map((a) => [a.querySelector(".parecido-nombre").textContent, a.querySelector(".parecido-nota").textContent]);
+
+async function abrirClienteNuevo() {
+    boton("+ Cliente nuevo").click();
+    await espera(80);
+}
+
+async function pasoClienteNuevo() {
+    await irAInicio();
+    modo("Pedido").click();
+    await espera(80);
+    boton("Bosques").click();
+    await espera(120);
+    const largoAntes = history.length;
+    await abrirClienteNuevo();
+    check(
+        "Cliente nuevo: título, zona automática, sin subtítulo ni franja de abajo",
+        [txt("#titulo"), txt(".zona-cliente-nuevo"), q("#subtitulo").hidden, q("#barra-pedido").hidden, history.length],
+        ["Cliente nuevo", "Zona: Bosques", true, true, largoAntes + 1]
+    );
+    checkOperacion("pedido", "Cliente nuevo");
+    checkInicio("Cliente nuevo");
+    const campo = q("#cliente-nombre");
+    check(
+        "Campo: dentro de un formulario, con su etiqueta, mayúscula en cada palabra, sin autocompletar ni corrector, letra de 16px o más",
+        [
+            !!campo.closest("form.form-cliente"),
+            txt(`label[for="cliente-nombre"]`),
+            ["autocapitalize", "autocomplete", "spellcheck", "enterkeyhint", "type"].map((a) => campo.getAttribute(a)),
+            parseFloat(getComputedStyle(campo).fontSize) >= 16,
+            campo.value,
+        ],
+        [true, "Nombre del cliente", ["words", "off", "false", "done", "text"], true, ""]
+    );
+    const guardar = q(".btn-guardar-cliente");
+    check(
+        "Botón «Guardar y levantar pedido»: verde, en el formulario, justo debajo del campo",
+        [txt(".btn-guardar-cliente"), guardar.type, getComputedStyle(guardar).backgroundColor, guardar.offsetHeight >= 64, guardar.closest("form") === campo.closest("form"), guardar.getBoundingClientRect().top >= campo.getBoundingClientRect().bottom],
+        ["Guardar y levantar pedido", "submit", VERDE, true, true, true]
+    );
+
+    // Con el teclado abierto (pantalla achicada a 393 x 480): el campo y el botón se ven.
+    campo.focus();
+    window.frameElement.style.height = "480px";
+    await espera(80);
+    check(
+        "Con el teclado abierto (393 x 480): el campo y el botón siguen visibles sin deslizar",
+        [window.innerHeight, campo.getBoundingClientRect().bottom <= window.innerHeight, guardar.getBoundingClientRect().bottom <= window.innerHeight, window.scrollY],
+        [480, true, true, 0]
+    );
+    window.frameElement.style.height = `${CELULAR[1]}px`;
+    await espera(80);
+
+    // Vacío: lo dice sin llamar al servidor.
+    guardar.click();
+    await espera(30);
+    check("Nombre vacío: mensaje, sin llamar al servidor", [txt(".form-cliente .error-envio"), llamadasA("cliente/nuevo")], ["Escribe el nombre del cliente.", 0]);
+    await escribirNombre("Tacos 🌮");
+    check("Al escribir se quita el mensaje", q(".form-cliente .error-envio"), null);
+    await guardarConEnter();
+    check(
+        "Nombre con emoji: el mensaje del servidor, sigue en la pantalla con lo escrito",
+        [txt(".form-cliente .error-envio"), txt("#titulo"), q("#cliente-nombre").value],
+        ["El nombre solo puede llevar letras, números, espacios y . , ' - & # ( ) /", "Cliente nuevo", "Tacos 🌮"]
+    );
+    check("Texto escrito sin guardar no cuenta como algo sin confirmar", pideConfirmarAlSalir(), false);
+
+    // Idéntico en la misma zona: solo «Es este».
+    await escribirNombre("  doña   CARMEN ");
+    await guardarConEnter();
+    check(
+        "Idéntico en la misma zona: «¿Es alguno de estos?» solo con «Es este» y cómo distinguirlos; sin entrada nueva en el historial",
+        [txt(".parecidos .pregunta"), qa(".parecidos .btn").map((b) => b.textContent), q(".btn-es-otro"), txt(".parecidos .nota"), history.length],
+        ["¿Es alguno de estos?", ["Es este: Doña Carmen"], null, "Si son dos clientes distintos, agrégale un apellido o el nombre del local.", largoAntes + 1]
+    );
+    boton("Es este: Doña Carmen").click();
+    await espera(150);
+    check(
+        "«Es este»: entra a su pedido (Productos), en lugar de «Cliente nuevo» en el historial",
+        [txt("#titulo"), q("#categorias").hidden, history.state.pantalla, history.state.cliente.id, history.length],
+        ["Doña Carmen", false, "productos", 9, largoAntes + 1]
+    );
+    await regresar();
+    check("Regresar desde sus productos: a los clientes, sin preguntar", [txt("#titulo"), q("#modal").hidden], ["Bosques", true]);
+
+    // Parecidos que contienen el nombre: de esta zona (tocable), archivado y de otra zona (solo aviso).
+    await abrirClienteNuevo();
+    check("Al volver a abrir, empieza vacío", q("#cliente-nombre").value, "");
+    await escribirNombre("Tortillería");
+    await guardarConEnter();
+    check(
+        "Parecidos: el de esta zona se puede tocar; archivado y de otra zona, solo aviso; «No, es otro cliente»",
+        [qa(".parecidos .btn.parecido").map((b) => b.textContent), avisosParecidos(), txt(".btn-es-otro")],
+        [
+            ["Tortillería La Guadalupana de Doña Lupita"],
+            [
+                ["Tortillería Vieja", "Hay un cliente archivado con este nombre; pide que lo reactiven"],
+                ["Tortillería El Sol", "Ya existe en Guadalupana: búscalo ahí"],
+            ],
+            "No, es otro cliente",
+        ]
+    );
+    const tokenParecidos = altasCliente[altasCliente.length - 1].token;
+    await escribirNombre("Tortillería X");
+    check("Al cambiar el nombre se quitan los parecidos", q(".parecidos"), null);
+    await escribirNombre("Tortillería");
+    await guardarConEnter();
+    const tokenOtraVez = altasCliente[altasCliente.length - 1].token;
+    check("Otro nombre, otro token", [/^[0-9a-f]{32}$/.test(tokenOtraVez), tokenOtraVez !== tokenParecidos], [true, true]);
+
+    // «No, es otro cliente» sin señal, con doble toque: un solo envío; reintento con el mismo token.
+    const antes = altasCliente.length;
+    modoClienteNuevo = "sin-red";
+    q(".btn-es-otro").click();
+    q(".btn-es-otro").click(); // doble toque
+    await espera(10);
+    check("Guardando: botón gris «GUARDANDO…» e INICIO gris", [txt(".btn-guardar-cliente"), q(".btn-guardar-cliente").disabled, inicioGris()], ["GUARDANDO…", true, true]);
+    await espera(200);
+    check(
+        "Sin señal: un solo envío, mensaje claro, sigue en la pantalla",
+        [altasCliente.length, altasCliente[antes].es_otro, txt(".form-cliente .error-envio"), txt("#titulo")],
+        [antes + 1, true, "No se pudo confirmar si el cliente se guardó. Toca «Guardar y levantar pedido» otra vez: si ya se había guardado, no se duplica.", "Cliente nuevo"]
+    );
+    q(".btn-guardar-cliente").click();
+    q(".btn-guardar-cliente").click(); // doble toque
+    await espera(250);
+    check(
+        "Reintento: mismo token, el servidor devuelve el que ya se había creado (uno solo)",
+        [altasCliente.length, altasCliente[antes + 1].token === altasCliente[antes].token, clientesCreados.filter((c) => c.nombre === "Tortillería").length],
+        [antes + 2, true, 1]
+    );
+    check(
+        "Guardado: directo a los productos del cliente nuevo, con la barra de PEDIDO",
+        [txt("#titulo"), txt("#subtitulo"), q("#categorias").hidden, history.state.pantalla, history.length],
+        ["Tortillería", "Bosques", false, "productos", largoAntes + 1]
+    );
+    checkOperacion("pedido", "Productos del cliente nuevo");
+    await regresar();
+    check(
+        "Regresar: a los clientes (se vuelven a pedir y ya incluyen al nuevo)",
+        [txt("#titulo"), qa(".lista .btn").map((b) => b.textContent).includes("Tortillería")],
+        ["Bosques", true]
+    );
+
+    // Alta sin parecidos: directo, con doble toque.
+    await abrirClienteNuevo();
+    await escribirNombre("fonda la nueva");
+    const altas = altasCliente.length;
+    q(".btn-guardar-cliente").click();
+    q(".btn-guardar-cliente").click(); // doble toque
+    await espera(250);
+    check("Sin parecidos: se guarda con un solo envío y entra a sus productos", [altasCliente.length, txt("#titulo")], [altas + 1, "fonda la nueva"]);
+
+    // Regresar e INICIO desde «Cliente nuevo» con algo escrito: sin preguntar.
+    await regresar();
+    await abrirClienteNuevo();
+    await escribirNombre("Algo escrito");
+    await regresar();
+    check("Regresar desde «Cliente nuevo» con algo escrito: a los clientes, sin preguntar", [txt("#titulo"), q("#modal").hidden], ["Bosques", true]);
+    await abrirClienteNuevo();
+    await escribirNombre("Algo escrito");
+    await tocarInicio();
+    check("INICIO desde «Cliente nuevo» con algo escrito: directo, sin preguntar ni recordatorio", [txt("#titulo"), q("#modal").hidden, recordatorios()], ["Captura", true, []]);
+}
+
 // === Usuario de tianguis (sin data-salir en <body>) ===
 
 async function pasoTianguisSinSalir() {
@@ -1702,7 +1905,7 @@ const PASOS = [
     pasoResumen, pasoEnviar, pasoInicioConPedido, pasoEntregaClientes, pasoEntregaLista, pasoEntregaResumen,
     pasoEntregaConfirmar, pasoEntregaAlgoMasYNada, pasoEntregaPendientes,
     pasoCobroClientes, pasoCobroAvisos, pasoCobroDetalle, pasoCobroParte, pasoCobroEnviar, pasoCobroTodoYNada,
-    pasoHistorialLargo, pasoAcomodo, pasoTarjetasGrandes,
+    pasoHistorialLargo, pasoAcomodo, pasoTarjetasGrandes, pasoClienteNuevo,
 ];
 
 window.addEventListener("load", async () => {

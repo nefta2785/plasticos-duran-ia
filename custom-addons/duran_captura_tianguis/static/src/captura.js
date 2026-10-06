@@ -1,4 +1,4 @@
-/* Captura tianguis. Inicio → modo Pedido (Zona → Cliente → Productos →
+/* Captura tianguis. Inicio → modo Pedido (Zona → Cliente, o "+ Cliente nuevo" → Productos →
  * Resumen → Enviado, con el pedido en memoria), modo Entrega (Zona → Cliente
  * con entregas pendientes → Lo pendiente → Resumen → Entregado), modo Cobro
  * (Zona → Cliente con algo por cobrar → Lo que debe → Confirmación → Cobrado)
@@ -44,7 +44,7 @@
     };
 
     const estado = {
-        // "inicio" | "zonas" | "clientes" | "productos" | "resumen" | "enviado"
+        // "inicio" | "zonas" | "clientes" | "cliente-nuevo" | "productos" | "resumen" | "enviado"
         // | "entrega" | "entrega-resumen" | "entregado"
         // | "cobro" | "cobro-confirmar" | "cobrado" | "acomodo"
         pantalla: "inicio",
@@ -638,6 +638,8 @@
             dibujarZonas();
         } else if (estado.pantalla === "clientes") {
             dibujarClientes();
+        } else if (estado.pantalla === "cliente-nuevo") {
+            dibujarClienteNuevo();
         } else if (estado.pantalla === "resumen") {
             dibujarResumen();
         } else if (estado.pantalla === "enviado") {
@@ -792,6 +794,8 @@
         if (!vigente(vista)) {
             return;
         }
+        // Solo en Pedido: dar de alta a quien todavía no está en Odoo.
+        const botonNuevo = entrega || cobrando ? null : botonClienteNuevo();
         if (!clientes.length) {
             mostrar(
                 aviso(
@@ -801,6 +805,7 @@
                           ? "Nadie de esta zona tiene algo por cobrar"
                           : "Esta zona no tiene clientes"
                 ),
+                botonNuevo,
                 el("button", {
                     type: "button",
                     class: "btn btn-primario",
@@ -819,6 +824,7 @@
                       ? "¿A quién le vas a cobrar?"
                       : "¿A quién le levantas el pedido?",
             }),
+            botonNuevo,
             lista(
                 clientes.map((cliente) =>
                     el("button", {
@@ -830,6 +836,190 @@
                 )
             )
         );
+    }
+
+    // === Pantalla: Cliente nuevo (solo Pedido) ===
+
+    // Lo escrito en "Cliente nuevo": se empieza de cero cada vez que se toca
+    // "+ Cliente nuevo". No cuenta como algo sin confirmar (pendientes()):
+    // escribir un nombre otra vez cuesta poco.
+    let clienteNuevo = null; // {nombre, token, parecidos, puedeCrear, error}
+
+    function botonClienteNuevo() {
+        return el("button", {
+            type: "button",
+            class: "btn btn-cliente-nuevo",
+            text: "+ Cliente nuevo",
+            onclick: () => {
+                clienteNuevo = null;
+                irA("cliente-nuevo", {});
+            },
+        });
+    }
+
+    function clienteNuevoActual() {
+        if (!clienteNuevo) {
+            // El token identifica a ESTE cliente ante el servidor (evita
+            // duplicados); cambia si cambia el nombre.
+            clienteNuevo = { nombre: "", token: nuevoToken(), parecidos: null, puedeCrear: true, error: null };
+        }
+        return clienteNuevo;
+    }
+
+    function quitar(selector) {
+        const nodo = ui.contenido.querySelector(selector);
+        if (nodo) {
+            nodo.remove();
+        }
+    }
+
+    function dibujarClienteNuevo() {
+        ponerTitulo("Cliente nuevo");
+        nuevaVista();
+        actualizarInicio();
+        const c = clienteNuevoActual();
+        if (!estado.zona) {
+            mostrar(aviso("Toca Regresar para elegir la zona."));
+            return;
+        }
+        const campo = el("input", {
+            id: "cliente-nombre",
+            class: "campo-texto",
+            type: "text",
+            name: "nombre",
+            maxlength: "60",
+            autocapitalize: "words",
+            autocomplete: "off",
+            autocorrect: "off",
+            spellcheck: "false",
+            enterkeyhint: "done",
+            value: c.nombre,
+            disabled: estado.enviando ? "disabled" : null,
+            oninput: (evento) => {
+                // Otro nombre es otro cliente: token nuevo, y los parecidos ya no valen.
+                c.nombre = evento.target.value;
+                c.token = nuevoToken();
+                c.error = null;
+                c.parecidos = null;
+                quitar(".parecidos");
+                quitar(".form-cliente .error-envio");
+            },
+        });
+        mostrar(
+            el("p", { class: "zona-cliente-nuevo" }, "Zona: ", el("strong", { text: estado.zona.nombre })),
+            el(
+                "form",
+                {
+                    class: "form-cliente",
+                    novalidate: "novalidate",
+                    onsubmit: (evento) => {
+                        evento.preventDefault();
+                        guardarClienteNuevo(false);
+                    },
+                },
+                el("label", { class: "seccion-titulo etiqueta-campo", for: "cliente-nombre", text: "Nombre del cliente" }),
+                campo,
+                c.error ? el("p", { class: "error-envio", role: "alert", text: c.error }) : null,
+                el("button", {
+                    type: "submit",
+                    class: "btn btn-exito btn-guardar-cliente",
+                    text: estado.enviando ? "GUARDANDO…" : "Guardar y levantar pedido",
+                    disabled: estado.enviando ? "disabled" : null,
+                })
+            ),
+            c.parecidos ? seccionParecidos(c) : null
+        );
+    }
+
+    function seccionParecidos(c) {
+        // "¿Es alguno de estos?": los de esta zona se pueden tocar; los de otra
+        // zona o archivados solo se avisan. Con uno idéntico en esta zona no se
+        // ofrece crear otro.
+        return el(
+            "section",
+            { class: "parecidos", role: "alert" },
+            el("p", { class: "pregunta", text: "¿Es alguno de estos?" }),
+            lista(
+                c.parecidos.map((p) =>
+                    p.id
+                        ? el("button", {
+                              type: "button",
+                              class: "btn parecido",
+                              text: p.identico && !c.puedeCrear ? `Es este: ${p.nombre}` : p.nombre,
+                              onclick: () => entrarConCliente({ id: p.id, nombre: p.nombre }),
+                          })
+                        : el(
+                              "div",
+                              { class: "parecido-aviso" },
+                              el("span", { class: "parecido-nombre", text: p.nombre }),
+                              el("span", {
+                                  class: "parecido-nota",
+                                  text: p.archivado
+                                      ? "Hay un cliente archivado con este nombre; pide que lo reactiven"
+                                      : `Ya existe en ${p.zona}: búscalo ahí`,
+                              })
+                          )
+                )
+            ),
+            c.puedeCrear
+                ? el("button", {
+                      type: "button",
+                      class: "btn btn-secundario btn-es-otro",
+                      text: "No, es otro cliente",
+                      onclick: () => guardarClienteNuevo(true),
+                  })
+                : el("p", { class: "nota", text: "Si son dos clientes distintos, agrégale un apellido o el nombre del local." })
+        );
+    }
+
+    async function guardarClienteNuevo(esOtro) {
+        const c = clienteNuevoActual();
+        if (estado.enviando) {
+            return;
+        }
+        if (!c.nombre.trim()) {
+            c.error = "Escribe el nombre del cliente.";
+            dibujarClienteNuevo();
+            return;
+        }
+        estado.enviando = true; // antes del await: bloquea el doble toque, INICIO y "atrás"
+        c.error = null;
+        dibujarClienteNuevo();
+        let respuesta;
+        try {
+            respuesta = await api("/captura/api/cliente/nuevo", {
+                zona_id: estado.zona.id,
+                nombre: c.nombre,
+                token: c.token,
+                es_otro: esOtro,
+            });
+        } catch (error) {
+            estado.enviando = false;
+            c.error = error.sinRespuesta
+                ? "No se pudo confirmar si el cliente se guardó. Toca «Guardar y levantar pedido» otra vez: " +
+                  "si ya se había guardado, no se duplica."
+                : error.message;
+            dibujarClienteNuevo();
+            return;
+        }
+        estado.enviando = false;
+        if (respuesta.parecidos) {
+            c.parecidos = respuesta.parecidos;
+            c.puedeCrear = respuesta.puede_crear;
+            dibujarClienteNuevo();
+            ui.contenido.querySelector(".parecidos").scrollIntoView({ block: "start" });
+            return;
+        }
+        entrarConCliente(respuesta.cliente);
+    }
+
+    function entrarConCliente(cliente) {
+        // Directo a sus productos. Reemplaza "Cliente nuevo" en el historial:
+        // Regresar desde Productos vuelve a Clientes (que ya lo incluye).
+        clienteNuevo = null;
+        Object.assign(estado, { pantalla: "productos", modo: "pedido", cliente });
+        history.replaceState(fotoHistorial(), "");
+        dibujar();
     }
 
     async function abrirCliente(cliente, pantalla) {

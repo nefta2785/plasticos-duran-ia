@@ -307,6 +307,65 @@ button {
 .modo-nombre { font-size: 26px; font-weight: 800; }
 .modo-detalle { font-size: 18px; font-weight: 600; }
 
+/* === Clientes: "+ Cliente nuevo" (solo Pedido) y su pantalla === */
+
+.btn-cliente-nuevo {
+    min-height: var(--alto-boton);
+    margin: 0 0 16px;
+    border: 3px solid var(--exito-oscuro);
+    background: var(--exito);
+    color: var(--primario-texto);
+    font-size: 24px;
+    font-weight: 900;
+    text-align: center;
+    box-shadow: 0 4px 0 #04381a;
+}
+.btn-cliente-nuevo:active { background: var(--exito-oscuro); }
+/* Zona vacía: entre el aviso y "Regresar a zonas". */
+.aviso + .btn-cliente-nuevo { margin-bottom: 12px; }
+
+.zona-cliente-nuevo {
+    margin: 4px 0 12px;
+    font-size: 21px;
+    font-weight: 600;
+}
+
+/* El botón va en el contenido, justo debajo del campo (no en la franja fija):
+   con el teclado abierto siguen visibles los dos. */
+.form-cliente {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.etiqueta-campo { margin: 0; }
+.campo-texto {
+    width: 100%;
+    min-height: 60px;
+    padding: 6px 14px;
+    border: 3px solid var(--borde);
+    border-radius: var(--radio);
+    font: inherit;
+    font-size: 24px;               /* 16px o más: el celular no hace zoom */
+    font-weight: 700;
+}
+.campo-texto:focus { outline: 4px solid var(--primario); outline-offset: 1px; }
+.form-cliente .error-envio { margin: 0; }
+.btn-exito:disabled { border-color: #7a7a7a; background: #a6a6a6; color: #1f1f1f; box-shadow: none; }
+
+.parecidos { margin-top: 24px; }
+.parecido { text-align: left; }
+.parecido-aviso {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 16px;
+    border: 2px dashed var(--texto-suave);
+    border-radius: var(--radio);
+}
+.parecido-nombre { font-size: 21px; font-weight: 800; overflow-wrap: anywhere; }
+.parecido-nota { font-size: 18px; font-weight: 700; color: var(--advertencia-texto); }
+.btn-es-otro { margin-top: 16px; }
+
 /* === Productos === */
 
 .producto {

@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from collections import defaultdict
 from datetime import datetime, time, timedelta
 
@@ -6,7 +7,7 @@ import pytz
 from markupsafe import Markup
 
 from odoo import Command, _, api, fields, models
-from odoo.exceptions import LockError, UserError
+from odoo.exceptions import ConcurrencyError, LockError, UserError
 from odoo.tools import float_is_zero, float_round, format_amount
 
 # "Lo de siempre": órdenes confirmadas de los últimos DIAS_HABITUALES días,
@@ -16,6 +17,15 @@ MAX_HABITUALES = 8
 
 # Token que genera la pantalla para cada pedido: 32 caracteres hexadecimales.
 FORMATO_TOKEN = re.compile(r"^[0-9a-f]{32}$")
+
+# Cliente nuevo desde Pedido: nombre de 2 letras a 60 caracteres, con letras
+# (con acento, ñ), números, espacios y estos signos. Parecidos: iguales, o uno
+# contiene al otro si el más corto tiene al menos MIN_CONTIENE caracteres.
+MAX_NOMBRE_CLIENTE = 60
+MIN_LETRAS_CLIENTE = 2
+SIGNOS_NOMBRE_CLIENTE = " .,'-&#()/"
+MIN_CONTIENE = 4
+MAX_PARECIDOS = 5
 
 # Modo Entrega: el peso de un rollo llega tal cual se tecleó ("1.250", "1,250",
 # "1250"), en kg y con máximo 3 decimales. Los límites son parámetros del
@@ -43,8 +53,9 @@ class DuranCaptura(models.AbstractModel):
     usuario que captura; las únicas excepciones (con sudo) son el historial de
     "Lo de siempre" (ver `get_habituales`), los precios de las líneas de venta
     de las entregas pendientes (ver `get_pendientes_entrega` y
-    `_importes_entrega`), los límites de peso (parámetros del sistema) y lo
-    que hay por cobrarle a un cliente (ver `get_cobro`). """
+    `_importes_entrega`), los límites de peso (parámetros del sistema), lo
+    que hay por cobrarle a un cliente (ver `get_cobro`) y el alta de un
+    cliente nuevo (ver `crear_cliente`). """
     _name = "duran.captura"
     _description = "Captura de pedidos en tianguis"
 
@@ -179,6 +190,146 @@ class DuranCaptura(models.AbstractModel):
         })
         orden.action_confirm()
         return self._resultado_envio(orden, ya_existia=False)
+
+    # === Cliente nuevo (desde Pedido) === #
+
+    @api.model
+    def crear_cliente(self, zona_id, nombre, token, es_otro=False):
+        """ Da de alta un cliente en la zona desde la que se entró, para
+        levantarle el pedido.
+
+        1. Valida el nombre y la zona.
+        2. Si ya hay un cliente con ese token (doble toque, reintento sin
+           señal), lo devuelve.
+        3. Busca clientes parecidos (activos y archivados, de todas las zonas).
+           Si hay, los devuelve sin crear nada, salvo que la pantalla diga
+           que es otro cliente (`es_otro`) y no haya uno idéntico y activo
+           en la misma zona.
+        4. Crea el cliente.
+
+        :return: {"cliente": {id, nombre}, "ya_existia": bool}, o
+            {"parecidos": [...], "puede_crear": bool}
+
+        Permiso acotado (sudo): quien captura no puede crear contactos. Con
+        sudo SOLO se hace el `create`, con estos campos fijos armados aquí (lo
+        demás que mande la pantalla ni llega a este método); sudo conserva al
+        usuario: "Creado por" y el autor del historial son quien captura. """
+        nombre = self._validar_nombre_cliente(nombre)
+        zona = self._zona(zona_id)
+        token = self._validar_token(token, _("el cliente nuevo"))
+        normalizado = self._normalizar_nombre(nombre)
+        self._bloquear_nombre_cliente(normalizado)
+
+        Contacto = self.env["res.partner"].with_context(active_test=False)
+        ya_creado = Contacto.search([("captura_token", "=", token)], limit=1)
+        if ya_creado:
+            return self._resultado_cliente(ya_creado, ya_existia=True)
+
+        parecidos = self._clientes_parecidos(normalizado, zona)
+        bloqueado = any(p["identico"] and p["misma_zona"] and not p["archivado"] for p in parecidos)
+        if parecidos and (not es_otro or bloqueado):
+            return {"parecidos": parecidos, "puede_crear": not bloqueado}
+
+        cliente = self.env["res.partner"].sudo().create({
+            "name": nombre,
+            "category_id": [Command.set([zona.id])],
+            "is_company": True,
+            "customer_rank": 1,
+            "comment": _(
+                "Creado desde la app el %(fecha)s por %(usuario)s",
+                fecha=self._fecha_local().strftime("%d/%m/%Y"), usuario=self.env.user.name,
+            ),
+            "captura_token": token,
+        }).sudo(False)
+        return self._resultado_cliente(cliente, ya_existia=False)
+
+    @api.model
+    def _validar_nombre_cliente(self, nombre):
+        """ Sin espacios a los lados ni repetidos; 2 letras o más, máximo
+        MAX_NOMBRE_CLIENTE caracteres; solo letras, números, espacios y
+        SIGNOS_NOMBRE_CLIENTE (nada de emojis ni caracteres de control). Las
+        mayúsculas se dejan como se escribieron. """
+        nombre = " ".join(unicodedata.normalize("NFC", nombre).split()) if isinstance(nombre, str) else ""
+        if not nombre:
+            raise UserError(_("Escribe el nombre del cliente."))
+        if len(nombre) > MAX_NOMBRE_CLIENTE:
+            raise UserError(_("El nombre puede tener máximo %(maximo)s caracteres.", maximo=MAX_NOMBRE_CLIENTE))
+        permitido = all(
+            unicodedata.category(c).startswith("L") or unicodedata.category(c) == "Nd" or c in SIGNOS_NOMBRE_CLIENTE
+            for c in nombre
+        )
+        if not permitido:
+            raise UserError(_("El nombre solo puede llevar letras, números, espacios y . , ' - & # ( ) /"))
+        if sum(unicodedata.category(c).startswith("L") for c in nombre) < MIN_LETRAS_CLIENTE:
+            raise UserError(_("El nombre debe tener al menos %(minimo)s letras.", minimo=MIN_LETRAS_CLIENTE))
+        return nombre
+
+    @staticmethod
+    def _normalizar_nombre(nombre):
+        """ Para comparar nombres: sin acentos, en minúsculas y sin espacios de más. """
+        sin_acentos = "".join(c for c in unicodedata.normalize("NFKD", nombre) if not unicodedata.combining(c))
+        return " ".join(sin_acentos.casefold().split())
+
+    @api.model
+    def _bloquear_nombre_cliente(self, normalizado):
+        """ Dos personas dando de alta el mismo nombre a la vez: la segunda no
+        espera aquí (con REPEATABLE READ no vería al cliente de la primera),
+        sino que su petición se repite desde cero (`ConcurrencyError`, ver
+        `odoo.service.model.retrying`) y entonces ya lo ve como parecido. """
+        self.env.cr.execute(
+            "SELECT pg_try_advisory_xact_lock(hashtext(%s))", [self._clave_bloqueo_cliente(normalizado)]
+        )
+        if not self.env.cr.fetchone()[0]:
+            raise ConcurrencyError(_("Alguien más está dando de alta un cliente con ese nombre."))
+
+    @staticmethod
+    def _clave_bloqueo_cliente(normalizado):
+        return f"duran_captura_tianguis.cliente_nuevo:{normalizado}"
+
+    @api.model
+    def _clientes_parecidos(self, normalizado, zona):
+        """ Contactos con zona (activos y archivados) cuyo nombre normalizado
+        es igual o uno contiene al otro (el más corto con MIN_CONTIENE
+        caracteres o más). Primero los idénticos y los de la misma zona;
+        máximo MAX_PARECIDOS. Solo se manda lo necesario para mostrarlos; el
+        id, solo de los que se pueden tocar (activos y de la misma zona). """
+        contactos = self.env["res.partner"].with_context(active_test=False).search_read(
+            [("category_id", "!=", False)], ["name", "category_id", "active"],
+        )
+        nombres_zona = {
+            categoria.id: categoria.display_name
+            for categoria in self.env["res.partner.category"].browse(
+                {cid for contacto in contactos for cid in contacto["category_id"]}
+            )
+        }
+        parecidos = []
+        for contacto in contactos:
+            otro = self._normalizar_nombre(contacto["name"] or "")
+            corto, largo = sorted((normalizado, otro), key=len)
+            identico = otro == normalizado
+            if not identico and not (len(corto) >= MIN_CONTIENE and corto in largo):
+                continue
+            misma_zona = zona.id in contacto["category_id"]
+            archivado = not contacto["active"]
+            parecidos.append({
+                "id": contacto["id"] if misma_zona and not archivado else False,
+                "nombre": contacto["name"],
+                "zona": zona.display_name if misma_zona else nombres_zona[contacto["category_id"][0]],
+                "misma_zona": misma_zona,
+                "archivado": archivado,
+                "identico": identico,
+            })
+        parecidos.sort(key=lambda p: (not p["identico"], not p["misma_zona"], p["archivado"], p["nombre"].casefold()))
+        return parecidos[:MAX_PARECIDOS]
+
+    @api.model
+    def _fecha_local(self):
+        zona_horaria = pytz.timezone(self.env.user.tz or ZONA_HORARIA_OPERACION)
+        return pytz.utc.localize(self._ahora()).astimezone(zona_horaria).date()
+
+    @api.model
+    def _resultado_cliente(self, cliente, ya_existia):
+        return {"cliente": {"id": cliente.id, "nombre": cliente.name}, "ya_existia": ya_existia}
 
     # === Modo Entrega === #
 

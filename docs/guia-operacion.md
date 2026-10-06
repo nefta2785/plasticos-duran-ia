@@ -80,6 +80,24 @@ Regresar a la pantalla anterior para cambiar algo (por ejemplo del resumen a la 
 pregunta. Lo capturado se pierde si cierran o recargan la página, o si Android cierra Chrome:
 **no salgan sin tocar el botón verde.**
 
+**Cliente nuevo (solo en Pedido).** Si el cliente todavía no está en Odoo, en la lista de clientes
+de la zona toquen el botón verde **"+ Cliente nuevo"** (también sale cuando la zona no tiene
+clientes). La zona es la de la pantalla; solo escriban el **nombre del cliente** y toquen
+**"Guardar y levantar pedido"**: entra directo a sus productos.
+
+- Si el nombre se parece a uno que ya existe, la app pregunta **"¿Es alguno de estos?"**. Si es
+  uno de esta zona, tóquenlo y entra a su pedido. Si dice "Ya existe en [otra zona]", búsquenlo en
+  esa zona. Si dice "Hay un cliente archivado con este nombre", pidan que lo reactiven en Odoo.
+  Si no es ninguno, toquen **"No, es otro cliente"**.
+- Si ya hay uno **con el mismo nombre en esta zona**, la app no deja crear otro igual: si son dos
+  clientes distintos, agréguenle un apellido o el nombre del local.
+- Si se va la señal al guardar, toquen **Guardar** otra vez: no se crea dos veces.
+- **Teléfono, RFC y dirección no se piden en la app:** se completan después en Odoo
+  (Contactos). En la nota interna del contacto queda "Creado desde la app el [fecha] por
+  [usuario]".
+- **Si quedó en la zona equivocada**, la corrige alguien con permisos en Contactos (cambiando su
+  etiqueta de zona). Quien captura no puede editar contactos.
+
 **Cada operación tiene su nombre y su color arriba**, en todas sus pantallas: **Pedido** azul,
 **Entrega** verde, **Cobro** naranja y **Acomodo** morado. Los botones de la pantalla de inicio
 tienen los mismos colores.

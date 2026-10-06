@@ -9,14 +9,15 @@ const datos = {
         { id: 2, nombre: "Guadalupana" }, // sin clientes
     ],
     "/captura/api/clientes": (p) =>
-        p.zona_id === 1
+        (p.zona_id === 1
             ? [
                   { id: 9, nombre: "Doña Carmen" }, // sin historial
                   { id: 7, nombre: "<b>Cliente con HTML</b>" }, // debe verse como texto
                   { id: 12, nombre: "Cliente con historial" },
                   { id: 13, nombre: "Tortillería La Guadalupana de Doña Lupita" }, // nombre largo
               ]
-            : [],
+            : []
+        ).concat(clientesCreados.filter((c) => c.zona_id === p.zona_id).map(({ id, nombre }) => ({ id, nombre }))),
     "/captura/api/habituales": (p) =>
         p.cliente_id === 12
             ? [
@@ -86,6 +87,67 @@ function enviarSimulado(params) {
             ya_existia: yaExistia,
         },
     };
+}
+
+// === Cliente nuevo (modo Pedido) ===
+
+// /captura/api/cliente/nuevo: "ok", o UNA vez "sin-red" (el cliente SÍ se crea,
+// pero la respuesta no llega). Parecidos con las mismas reglas que el servidor.
+let modoClienteNuevo = "ok";
+const clientesCreados = []; // {id, nombre, zona_id, token}
+const altasCliente = []; // parámetros de cada alta recibida
+const ZONAS_SIM = { 1: "Bosques", 2: "Guadalupana" };
+const CONTACTOS_CON_ZONA = () => [
+    { id: 9, nombre: "Doña Carmen", zona_id: 1, activo: true },
+    { id: 7, nombre: "<b>Cliente con HTML</b>", zona_id: 1, activo: true },
+    { id: 12, nombre: "Cliente con historial", zona_id: 1, activo: true },
+    { id: 13, nombre: "Tortillería La Guadalupana de Doña Lupita", zona_id: 1, activo: true },
+    { id: 31, nombre: "Tortillería El Sol", zona_id: 2, activo: true }, // de otra zona
+    { id: 32, nombre: "Tortillería Vieja", zona_id: 1, activo: false }, // archivado
+    ...clientesCreados.map((c) => ({ ...c, activo: true })),
+];
+const normalizarNombre = (texto) =>
+    texto.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+
+function crearClienteSimulado(p) {
+    altasCliente.push(p);
+    const nombre = (p.nombre || "").trim().split(/\s+/).filter(Boolean).join(" ");
+    const error = (mensaje) => ({
+        error: { code: 200, message: "Odoo Server Error", data: { name: "odoo.exceptions.UserError", message: mensaje } },
+    });
+    if (!nombre) return error("Escribe el nombre del cliente.");
+    if (/[^\p{L}\p{Nd} .,'\-&#()/]/u.test(nombre)) {
+        return error("El nombre solo puede llevar letras, números, espacios y . , ' - & # ( ) /");
+    }
+    const ya = clientesCreados.find((c) => c.token === p.token);
+    if (ya) return { result: { cliente: { id: ya.id, nombre: ya.nombre }, ya_existia: true } };
+    const buscado = normalizarNombre(nombre);
+    const parecidos = CONTACTOS_CON_ZONA()
+        .map((c) => {
+            const otro = normalizarNombre(c.nombre);
+            const [corto, largo] = [buscado, otro].sort((a, b) => a.length - b.length);
+            const identico = otro === buscado;
+            if (!identico && !(corto.length >= 4 && largo.includes(corto))) return null;
+            const misma = c.zona_id === p.zona_id;
+            return {
+                id: misma && c.activo ? c.id : false, nombre: c.nombre, zona: ZONAS_SIM[c.zona_id],
+                misma_zona: misma, archivado: !c.activo, identico,
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => (b.identico - a.identico) || (b.misma_zona - a.misma_zona) || (a.archivado - b.archivado))
+        .slice(0, 5);
+    const bloqueado = parecidos.some((x) => x.identico && x.misma_zona && !x.archivado);
+    if (parecidos.length && (!p.es_otro || bloqueado)) {
+        return { result: { parecidos, puede_crear: !bloqueado } };
+    }
+    const nuevo = { id: 900 + clientesCreados.length, nombre, zona_id: p.zona_id, token: p.token };
+    clientesCreados.push(nuevo);
+    if (modoClienteNuevo === "sin-red") {
+        modoClienteNuevo = "ok";
+        throw new TypeError("Failed to fetch");
+    }
+    return { result: { cliente: { id: nuevo.id, nombre }, ya_existia: false } };
 }
 
 // === Modo Entrega ===
@@ -430,6 +492,9 @@ window.fetch = async (ruta, opciones) => {
     } else if (ruta === "/captura/api/cobro/confirmar") {
         await espera(60);
         cuerpo = confirmarCobroSimulado(params);
+    } else if (ruta === "/captura/api/cliente/nuevo") {
+        await espera(60); // da tiempo al doble toque
+        cuerpo = crearClienteSimulado(params);
     } else if (ruta === "/captura/api/acomodo") {
         cuerpo = { result: acomodoSimulado() };
     } else if (datosCobro[ruta]) {

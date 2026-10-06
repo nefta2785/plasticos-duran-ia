@@ -90,6 +90,12 @@ class CapturaTianguis(http.Controller):
     def api_enviar(self, cliente_id, zona_id, lineas, token):
         return self._captura().enviar_pedido(cliente_id, zona_id, lineas, token)
 
+    @http.route("/captura/api/cliente/nuevo", type="jsonrpc", auth="user", methods=["POST"])
+    def api_cliente_nuevo(self, zona_id, nombre, token, es_otro=False, **_ignorados):
+        # Cualquier otro dato que mande la pantalla (p. ej. RFC o etiquetas)
+        # se ignora: el cliente se crea solo con los campos que arma el servidor.
+        return self._captura().crear_cliente(zona_id, nombre, token, bool(es_otro))
+
     @http.route("/captura/api/entrega/clientes", type="jsonrpc", auth="user", methods=["POST"])
     def api_entrega_clientes(self, zona_id):
         return self._captura().get_clientes_entrega(zona_id)

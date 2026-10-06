@@ -14,7 +14,7 @@ from odoo.tests import new_test_user
 GRUPO_CAPTURA = "duran_captura_tianguis.group_captura_tianguis"
 RUTAS_PEDIDO = (
     "/captura/api/zonas", "/captura/api/clientes", "/captura/api/catalogo",
-    "/captura/api/habituales", "/captura/api/enviar",
+    "/captura/api/habituales", "/captura/api/enviar", "/captura/api/cliente/nuevo",
 )
 # Rutas del modo Entrega.
 RUTAS_ENTREGA = (
@@ -201,4 +201,6 @@ class CapturaHttpMixin:
             return {"cliente_id": self.cliente.id}
         if ruta.endswith("enviar"):
             return self._params_envio([(self.normal, 1)])
+        if ruta.endswith("cliente/nuevo"):
+            return {"zona_id": self.zona_con_clientes.id, "nombre": "Cliente ruta prueba", "token": uuid.uuid4().hex}
         return {}
