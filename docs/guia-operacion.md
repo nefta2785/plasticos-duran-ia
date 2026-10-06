@@ -158,38 +158,22 @@ usar la app en ese celular, le pedirá la contraseña nueva.
 
 ## 8. Hoja de carga (para el papá)
 
-Sirve para saber **cuánto cargar de cada producto** mientras la mamá sigue levantando pedidos.
+En **Ventas › Órdenes › Hoja de carga** sale todo lo que falta entregar, **agrupado por zona**
+(las zonas ya vienen abiertas): un renglón por producto con su cantidad ("4 pz" son piezas,
+"2,5 kg" kilos). Solo la ven el papá y el administrador. Al ir acomodando, toquen el **cuadro**
+de cada producto:
 
-**Dónde está:** en Odoo, **Ventas › Órdenes › Hoja de carga**. Solo la ven el papá y el
-administrador.
+- **☐ (cuadro vacío)**: toquen para marcarlo como acomodado.
+- **Verde, ☑ (cuadro palomeado)**: acomodado; el total no ha cambiado. Para desmarcarlo, toquen
+  el cuadro palomeado.
+- **Naranja** ("Se agregó 1", "Se agregaron 3"): después de marcarlo entraron pedidos de ese
+  producto en esa zona. Acomoden lo nuevo y toquen otra vez el cuadro.
+- **Azul** ("Ahora son 2"): el total bajó (por ejemplo, se canceló un pedido). Revisen y toquen
+  el cuadro para dejarlo en verde.
 
-**Qué muestra:** un renglón por producto con el total que falta entregar, en la columna
-**Demanda**, y su **Unidad** (kg, o "Unidades" para los rollos y las piezas).
-
-- Aparece **todo lo que falta entregar**, también lo de días anteriores que no se entregó y lo
-  que Odoo marca sin existencia.
-- **No** aparece lo ya entregado ni lo cancelado.
-
-**Para ver los pedidos nuevos:** vuelvan a tocar **Hoja de carga** en el menú (o recarguen la
-página). Cada vez que la abren, trae lo que la mamá haya enviado hasta ese momento.
-
-**Solo lo de hoy o solo lo atrasado:** en la barra de búsqueda, abran el menú de filtros (la
-flecha junto a la lupa) y escojan:
-
-- **Hoy**: solo los pedidos levantados hoy.
-- **Días anteriores**: solo lo atrasado, de pedidos de otros días.
-- Sin ninguno de los dos: todo lo pendiente.
-
-**Por zona:**
-
-- Para ver una sola zona, escriban el nombre de la zona en la barra de búsqueda y escojan la
-  opción **Zona**.
-- Para ver todas las zonas separadas, en el mismo menú de filtros, en **Agrupar por**, escojan
-  **Zona**. Los pedidos hechos en Odoo sin zona salen en el grupo **Ninguno**.
-- Para distinguir lo atrasado, en **Agrupar por** escojan **Fecha del pedido**.
-
-Para volver a la vista normal, quiten los filtros con la **x** de la barra de búsqueda y dejen
-**Agrupar por › Producto**.
+Las marcas empiezan en blanco cada día. La hoja **se actualiza sola cada 30 segundos** mientras
+la pantalla esté abierta: no hace falta recargarla para ver los pedidos nuevos. En el celular
+cabe a lo ancho, sin deslizar a los lados.
 
 ## 9. Pendiente de cobro (para el papá)
 

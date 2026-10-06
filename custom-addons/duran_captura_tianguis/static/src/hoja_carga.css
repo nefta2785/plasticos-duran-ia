@@ -1,0 +1,37 @@
+/* Hoja de carga: solo en esta lista (class="o_hoja_carga"). */
+
+/* El texto ámbar de Odoo (decoration-warning) se ve ocre; los renglones con
+   "Se agregó…" van en un naranja más fuerte. */
+.o_hoja_carga .o_data_row.text-warning,
+.o_hoja_carga .o_data_row.text-warning .o_data_cell {
+    color: #c2410c !important;
+}
+
+/* Cuadro de marcar (☐ Acomodado / ☑ Quitar) de 44 x 44, del tamaño de un dedo. */
+.o_hoja_carga .o_data_row button.o_hoja_carga_cuadro {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 24px;
+    line-height: 1;
+}
+.o_hoja_carga .o_data_row button.o_hoja_carga_cuadro .o_button_icon {
+    margin: 0 !important;
+}
+/* El texto del botón no se ve, pero queda como su nombre (lectores de pantalla). */
+.o_hoja_carga .o_data_row button.o_hoja_carga_cuadro > span {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+/* Que el producto y el aviso se lean completos: pueden ocupar dos líneas. */
+.o_hoja_carga .o_data_row .o_data_cell {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere; /* "(Pieza/Unidad)" también se parte */
+}

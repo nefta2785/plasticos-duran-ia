@@ -192,8 +192,9 @@ node custom-addons/duran_captura_tianguis/tests/pantalla/correr.mjs
 | Modo Cobro, "Pagó todo" y "Pagó una parte": estados por factura con saldo anterior de $100 y $300 de hoy (pagó $400: ambas pagadas; $250: la primera pagada y la segunda parcial con $150; $50: la primera parcial con $50 y la segunda sin pagar), con renglones antes/aplicado/después y saldo igual al de Odoo; lo pendiente aparece como saldo anterior en el siguiente cobro y se puede cobrar; "Pagó todo" con saldo a favor; montos de más, 0, negativos, con 3 decimales o que no son número: rechazo sin crear nada (justo el total sí); cero o dos diarios de efectivo: rechazo sin crear nada ("No pagó hoy" no lo necesita); el pago solo usa el diario de efectivo y las líneas por cobrar del cliente, un solo pago con la diferencia abierta, aunque la pantalla mande otros ids (espía); "Creado por" = quien cobra, fecha de hoy y referencia "Cobro en tianguis #número"; pago desde Odoo entre lectura y confirmación → "cambiaron" sin crear nada; doble toque: un solo pago; falla después de crear el pago sin dejar nada; arqueo: efectivo recibido de la bitácora del día = pagos en el diario de efectivo creados por quien cobra ese día | `test_cobro_pago.py` | — |
 | Modo Cobro, arqueo en "Resumen de ventas": abre con el filtro "Hoy" (el día de hoy en la zona horaria de quien consulta), agrupado por día y luego por quién cobró; columnas fecha y hora, quién cobró, cliente, zona, cómo pagó, total a cobrar, efectivo recibido y queda pendiente, con sumas; la suma de efectivo del grupo de hoy de cada persona = los pagos en el diario de efectivo creados por ella hoy (sin el cobro de ayer ni un pago hecho desde Odoo por otra persona); quien captura solo ve su grupo y el gerente de Ventas ve el de todos | `test_cobro_arqueo.py` | — |
 | /captura como inicio: el usuario de tianguis (grupo Captura, sin ser gerente de Ventas ni administrador) llega a /captura después de iniciar sesión, aunque el login traiga otro destino (/odoo, Discuss, una acción); gerente de Ventas, Ajustes y Permisos de acceso entran a Odoo como siempre, con o sin destino; sin el grupo no cambia; el servidor decide el botón "Salir" (`data-salir` solo para gerentes y administradores); app "Captura" en el menú de Odoo (abre /captura en la misma pestaña) para todo el grupo, que no es la primera app; cambiar la contraseña cierra las sesiones abiertas | `test_inicio.py` | Inicio de tianguis |
-| Hoja de carga (Ventas › Órdenes › Hoja de carga): pendiente por producto desde los movimientos de entrega abiertos (misma regla que el modo Entrega); cuenta lo reservado, lo "sin existencia" y lo parcialmente disponible, y lo que falta de un parcial con backorder; no cuenta lo parcial sin backorder, lo bajado por el modo Entrega, devoluciones ni órdenes canceladas (donde "pedido menos entregado" daría pendientes falsos); abre sin filtro de día (sale lo atrasado); "Hoy" y "Días anteriores" por la fecha del pedido guardada, no la de la entrega, en zona horaria de México (pedido de las 23:30); agrupar por zona, incluido lo que no tiene zona; pedido nuevo del modo Pedido aparece al volver a consultar; suma en la unidad del producto (500 g + 2 kg = 2.5 kg; rollos en piezas); lista de 3 columnas (Producto, Demanda con suma, Unidad) agrupada por producto; menú solo para gerente de Ventas y administrador | `test_hoja_carga.py` | — |
-| Pendiente de cobro (Ventas › Órdenes › Pendiente de cobro): un renglón por movimiento entregado (hecho, salida a cliente, ligado a venta, no devolución); abre con "Hoy" por la fecha de validación (no la del pedido), en zona horaria de México (23:30 de hoy sí, 23:30 de ayer no), y "Últimos 7 días"; no entran pendientes, cancelados, lo cancelado de un parcial ni devoluciones; lo ya facturado (cobrado en la app) desaparece: solo entra si a su línea de venta le queda algo por facturar; importe = cantidad entregada (en la unidad de la línea) × precio × (1 − descuento), y en rollos peso × precio por kg congelado × (1 − descuento), igual al subtotal de la factura; se recalcula si cambia el precio o el descuento de la línea; la entrega hecha desde la app por un usuario de solo Captura calcula el importe; varias órdenes del mismo cliente el mismo día; sumas por Zona › Cliente, con lo que no tiene zona; columnas, opcionales, orden por pedido y agrupaciones; menú solo para gerente y administrador, acción con grupo de gerente e importe no legible para Captura ni Vendedor | `test_pendiente_cobro.py` | — |
+| Hoja de carga (Ventas › Órdenes › Hoja de carga): vista SQL con un renglón por producto y zona y el total pendiente desde los movimientos de entrega abiertos (misma regla que el modo Entrega): cuenta lo reservado, lo "sin existencia", lo parcialmente disponible, lo que falta de un parcial con backorder y lo atrasado; no cuenta lo parcial sin backorder, lo bajado por el modo Entrega, devoluciones ni órdenes canceladas; pedido nuevo del modo Pedido aparece al volver a consultar; zona de la orden o, si no tiene, la única del cliente (si no, sin zona); total en la unidad del producto (500 g + 2 kg = 2.5 kg; rollos en piezas). Marcas de "Acomodado": guarda la cantidad que se veía en pantalla; doble toque; "Se agregó 1" / "Se agregaron X" (con decimales en kg) / "Ahora son N"; volver a marcar deja verde; "Quitar" idempotente; día nuevo sin marcas; producto nuevo después de otras marcas; pendiente 0 deja de aparecer; mismo producto en dos zonas con marcas independientes (un pedido en otra zona no cambia el aviso); sin zona también se marca; otro gerente reescribe la misma marca; marca única por producto + zona + fecha (también sin zona); cantidad inválida no marca. Columna de cantidad ("4 pz", "2,5 kg", coma de es_419) y aviso con el separador del idioma. Lista: sin columna Zona, abre agrupada por zona con las zonas abiertas (expand), recarga automática (js_class), colores, cuadro de marcar ☐ / ☑ (fa-square-o / fa-check-square-o) con su nombre, condición y contexto, sin suma, búsqueda solo por zona; menú, acción y datos solo para gerente de Ventas (la mamá y un vendedor no leen ni marcan) | `test_hoja_carga.py` | — |
+| Pendiente de cobro (Ventas › Órdenes › Pendiente de cobro): vista SQL con dos tipos de renglón, "Entregado hoy" (movimientos validados hoy, día de calendario en México, sin facturar) y "Saldo anterior" (facturas publicadas con saldo, saldos a favor en negativo y entregas de días anteriores sin facturar). Cliente con entrega hoy sin deuda; cliente con deuda y sin entrega hoy (aparece igual); pago parcial hoy (lo de hoy pasa a saldo de su factura, 0 días); entrega anterior sin cobrar y línea entregada en partes; saldo a favor (nota de crédito y pago sin aplicar); dirección hija agrupada en su cliente principal; Total a cobrar igual al de la app de Cobro (rollo, descuento, kg con centavos, pago parcial, nota de crédito y devolución de hoy); "hoy" con la hora de México cerca de medianoche; zona de la orden o, si no tiene, la única del cliente (si no, sin zona), también en lo entregado hoy; rojo con más de 7 días (7 no, 8 sí; nunca lo de hoy); "Días de antigüedad" con el máximo en el encabezado del cliente; sumas por Zona › Cliente; columnas, orden (hoy por pedido, saldos del más antiguo al más reciente), filtro "Solo con saldo anterior" (sin "Hoy"); importe del movimiento como lo factura Odoo y recalculado si cambia el precio o el descuento; menú, acción y datos solo para gerente de Ventas | `test_pendiente_cobro.py` | — |
+| Vistas de cada acción del módulo: cada acción de ventana abre vistas de su propio modelo (`res_model`) y con campos que ese modelo tiene (detecta, por ejemplo, `"stock.move"."estado" field is undefined`) | `test_vistas_acciones.py` | — |
 
 Pruebas de `duran_peso_variable` (`custom-addons/duran_peso_variable/tests/`):
 
@@ -295,22 +296,23 @@ entregas pendientes y otro con algo por cobrar.
 
 ## 8. Revisión a mano: hoja de carga en el celular
 
-Las pruebas automáticas revisan que la lista tenga solo 3 columnas (Producto, Demanda y Unidad),
-pero **no** la dibujan a 393 px. Las pruebas de pantalla usan el Chrome de la Mac con una página
-armada sin Odoo (`tests/pantalla/correr.mjs`), no pueden abrir el backend. Las pruebas de
-navegador de Odoo necesitan Chrome **dentro** del contenedor, y no lo tiene. Por eso esto se
-revisa a mano:
+Las pruebas automáticas revisan columnas, colores, botones y marcas, pero **no** dibujan la lista.
+Las pruebas de pantalla (`tests/pantalla/correr.mjs`) no abren el backend, y las de navegador de
+Odoo necesitan Chrome **dentro** del contenedor, que no lo tiene. Por eso esto se revisa a mano:
 
 1. Con el usuario del papá (o uno de gerente de Ventas), abrir en el celular Ventas › Órdenes ›
-   Hoja de carga.
-2. Sin girar el celular, la lista se ve completa **sin deslizar a los lados**: nombre del
-   producto, Demanda y Unidad, con el total de cada producto en su renglón.
-3. Con un nombre de producto largo, el nombre se corta o se acomoda, pero la Demanda y la
-   Unidad siguen visibles.
-4. Filtros **Hoy** y **Días anteriores**, y **Agrupar por › Zona**: se pueden escoger con el
-   dedo y la lista sigue sin deslizar a los lados.
-5. En la computadora, la misma lista, y que al volver a abrir el menú aparezcan los pedidos
-   nuevos que envió la mamá.
+   Hoja de carga. Abre agrupada por zona, con las zonas **abiertas**.
+2. Columnas Producto (en 2 o 3 líneas si hace falta), Cantidad ("4 pz", "2,5 kg") y Aviso
+   completo, y el cuadro de marcar: todo se ve **sin deslizar a los lados** (medido: 393 de 393
+   px; a 360 px solo queda fuera el engrane del encabezado de zona).
+3. Tocar el **cuadro vacío ☐** de un producto: queda en verde con "Acomodado" y el cuadro
+   **palomeado ☑**; tocarlo otra vez quita la marca. Que el cuadro (44 × 44 px) se pueda tocar
+   con el dedo sin atinarle al renglón de al lado.
+4. Con un pedido nuevo de ese producto en la misma zona (desde la app), **sin recargar**: en
+   menos de 30 segundos sale en naranja, "Se agregó 1", y las zonas siguen abiertas; tocar otra
+   vez el cuadro: verde. En otra zona, el aviso no cambia.
+5. Sin señal un rato: la hoja no muestra avisos de error; al volver la señal se actualiza sola.
+6. Al sol: que se distingan el verde, el naranja y el azul.
 
 ## 9. Verificar una pantalla del backend en 8071 con una sesión temporal (SOLO PARA DESARROLLO)
 
@@ -350,21 +352,22 @@ ninguna contraseña.
 
 ## 10. Revisión a mano: pendiente de cobro
 
-1. Entregar algo hoy desde la app. Con el usuario del papá (o gerente), abrir Ventas › Órdenes ›
-   Pendiente de cobro: abre con **Hoy** y agrupado por **Zona › Cliente**, y aparece lo
-   entregado con su importe. El total de abajo es la suma de todo.
-2. Abrir un cliente: un renglón por producto entregado, con Cantidad, Unidad, Peso del rollo
-   (solo en rollos), Pendiente por pagar y Pedido.
-3. Tocar el encabezado **Pedido** con un cliente abierto: el orden se invierte dentro del grupo;
-   otro toque lo regresa. Con todos los grupos cerrados, tocarlo no hace nada (así funciona Odoo).
-4. Filtros **Hoy** y **Últimos 7 días**; **Agrupar por › Día de entrega**.
-5. Comparar el importe de un cliente con su factura al cobrarle: debe ser igual (sin impuestos).
+1. Con el usuario del papá (o gerente), abrir Ventas › Órdenes › Pendiente de cobro: abre
+   agrupado por **Zona › Cliente**, con lo entregado hoy y el saldo anterior de cada cliente.
+   Aparecen también los clientes con deuda que hoy no tuvieron entrega.
+2. Abrir un cliente: renglones de "Entregado hoy" (Pedido, Producto, Cantidad, Peso del rollo
+   solo en rollos, Pendiente de hoy) y de saldo (factura, saldo a favor en negativo o entrega
+   anterior, con su Fecha del saldo y Días de antigüedad).
+3. El encabezado del cliente muestra el **máximo** de Días de antigüedad; los saldos de más de
+   7 días se ven en **rojo**.
+4. Filtro **Solo con saldo anterior**: quedan solo los renglones de saldo.
+5. Comparar el **Total a cobrar** de un cliente con la pantalla de Cobro de la app: debe ser el
+   mismo (si su saldo a favor es mayor, la app muestra $0 y aquí sale en negativo).
 6. Con el usuario de la mamá (solo Captura): el menú no aparece.
 
 ## 11. Pendientes conocidos
 
-- **Hoja de carga:** su acción no está restringida a gerente (solo el menú). Queda pendiente
-  aplicarle lo mismo que al Pendiente de cobro. Aun así, `group_ids` en una acción no impide
-  abrirla por su dirección: Odoo la carga con sudo sin revisar grupos
-  (`web/controllers/action.py:41-44`); lo que protege el dato es el grupo en el campo.
-
+- **Hoja de carga:** resuelto. La acción tiene `group_ids` de gerente y, como `group_ids` en una
+  acción no impide abrirla por su dirección (Odoo la carga con sudo sin revisar grupos,
+  `web/controllers/action.py:41-44`), lo que protege el dato es el acceso a los modelos
+  `duran.hoja.carga` y `duran.hoja.carga.marca`: solo gerente de Ventas.

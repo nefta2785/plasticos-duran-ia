@@ -27,6 +27,12 @@ Resumen de ventas).
         "views/captura_templates.xml",
         "views/captura_menus.xml",
     ],
+    "assets": {
+        "web.assets_backend": [
+            "duran_captura_tianguis/static/src/hoja_carga.css",
+            "duran_captura_tianguis/static/src/hoja_carga_list.js",
+        ],
+    },
     "installable": True,
     "application": False,
 }
