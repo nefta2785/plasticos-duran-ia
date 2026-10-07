@@ -58,7 +58,7 @@ class DuranHojaCarga(models.Model):
     unidad_producto_id = fields.Many2one("uom.uom", string="Unidad", readonly=True)
     cantidad_marcada = fields.Float(string="Cantidad marcada", digits="Product Unit", readonly=True, aggregator=None)
     estado = fields.Selection(
-        [("sin_marcar", "Sin marcar"), ("acomodado", "Acomodado"), ("agregado", "Se agregó"), ("bajo", "Bajó")],
+        [("sin_marcar", "Sin marcar"), ("acomodado", "Acomodado"), ("agregado", "Se agregó")],
         string="Estado", readonly=True,
     )
     # En Python y no en el SQL: los números van con el separador decimal del
@@ -107,10 +107,13 @@ class DuranHojaCarga(models.Model):
             SELECT t.product_id::bigint * 1000000 + COALESCE(t.zona_id, 0) AS id,
                    t.zona_id, t.product_id, t.total, pt.uom_id AS unidad_producto_id,
                    m.cantidad AS cantidad_marcada,
+                   -- Verde si lo marcado alcanza para lo pendiente (total igual o menor);
+                   -- naranja solo si el total pasó de lo marcado. Limitación: si el total
+                   -- baja (por entregas) y luego vuelve a subir sin pasar de lo marcado,
+                   -- sigue verde aunque el carrito ya tenga menos de lo que se marcó.
                    CASE WHEN m.id IS NULL THEN 'sin_marcar'
-                        WHEN t.total = ROUND(m.cantidad::numeric, par.digitos) THEN 'acomodado'
                         WHEN t.total > ROUND(m.cantidad::numeric, par.digitos) THEN 'agregado'
-                        ELSE 'bajo'
+                        ELSE 'acomodado'
                    END AS estado
               FROM totales t
               JOIN product_product pp ON pp.id = t.product_id
@@ -135,8 +138,6 @@ class DuranHojaCarga(models.Model):
                     renglon.aviso = _("Se agregó 1")
                 else:
                     renglon.aviso = _("Se agregaron %(cantidad)s", cantidad=renglon._numero(diferencia))
-            elif renglon.estado == "bajo":
-                renglon.aviso = _("Ahora son %(cantidad)s", cantidad=renglon._numero(renglon.total))
             else:
                 renglon.aviso = False
 

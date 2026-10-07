@@ -3,7 +3,8 @@
 
     <!-- Hoja de carga: un renglón por producto y zona con lo pendiente de
          entregar (vista SQL duran.hoja.carga) y la marca de "Acomodado" de hoy.
-         Verde: acomodado; naranja: se agregó después de marcar; azul: bajó.
+         Verde: lo marcado alcanza para lo pendiente; naranja: se agregó más
+         de lo marcado.
          Abre con las zonas abiertas (expand) y se recarga sola
          (js_class hoja_carga_list, static/src/hoja_carga_list.js). Pensada
          para caber en 393 px: la zona va solo en el encabezado del grupo. -->
@@ -14,8 +15,7 @@
             <list string="Hoja de carga" class="o_hoja_carga" js_class="hoja_carga_list" expand="1"
                   create="false" edit="false" delete="false"
                   decoration-success="estado == 'acomodado'"
-                  decoration-warning="estado == 'agregado'"
-                  decoration-info="estado == 'bajo'">
+                  decoration-warning="estado == 'agregado'">
                 <field name="estado" column_invisible="True"/>
                 <field name="product_id"/>
                 <!-- Total y unidad en una columna ("4 pz", "2,5 kg"); `total` va

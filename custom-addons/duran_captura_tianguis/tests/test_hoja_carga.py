@@ -262,16 +262,105 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._pedido([(self.kilo, 2.5)])
         self.assertEqual(self._estado(self.kilo), (4.5, "agregado", "Se agregaron 2,5"))  # es_419, como en duranDEV
 
-    def test_total_baja_ahora_son_n(self):
-        producto = self._producto("Baja hoja de carga")
+    def _en_pantalla(self, producto, zona=None):
+        """ (color, aviso, botón) del renglón según la lista: evalúa las
+        decoraciones y el `invisible` de los botones de la vista con los
+        valores del renglón. Color: "verde" (decoration-success), "naranja"
+        (decoration-warning) o None. """
+        renglon = self._renglon(producto, zona)
+        arch = etree.fromstring(self.env["duran.hoja.carga"].with_user(self.papa).get_views(
+            [(self.accion.view_id.id, "list")],
+        )["views"]["list"]["arch"])
+        valores = {"estado": renglon.estado, "total": renglon.total}
+        colores = [
+            color for color, atributo in (("verde", "decoration-success"), ("naranja", "decoration-warning"))
+            if safe_eval(arch.get(atributo), valores)
+        ]
+        self.assertLessEqual(len(colores), 1, "un solo color por renglón")
+        botones = [b.get("string") for b in arch.xpath("//button") if not safe_eval(b.get("invisible"), valores)]
+        self.assertEqual(len(botones), 1, "un solo cuadro por renglón")
+        return (colores[0] if colores else None, renglon.aviso or None, botones[0])
+
+    def test_sin_marca_sin_color(self):
+        producto = self._producto("Sin marca hoja de carga")
+        self._pedido([(producto, 3)])
+        self.assertEqual(self._estado(producto), (3.0, "sin_marcar", None))
+        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodado"))
+
+    def test_total_igual_a_lo_marcado_verde(self):
+        producto = self._producto("Igual hoja de carga")
+        self._pedido([(producto, 5)])
+        self._acomodado(producto)
+        self.assertEqual(self._estado(producto), (5.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._en_pantalla(producto), ("verde", "Acomodado", "Quitar"))
+
+    def test_total_menor_que_lo_marcado_verde(self):
+        """ Bajó el total (se canceló un pedido o la mamá entregó parte): lo
+        marcado alcanza, sigue verde con ☑ "Quitar". Ya no hay estado "bajó". """
+        producto = self._producto("Menor hoja de carga")
         self._pedido([(producto, 3)])
         cancelado = self._pedido([(producto, 2)])
         self._acomodado(producto)
-        self.assertEqual(self._estado(producto), (5.0, "acomodado", "Acomodado"))
         cancelado._action_cancel()
-        self.assertEqual(self._estado(producto), (3.0, "bajo", "Ahora son 3"))
-        self._acomodado(producto)
         self.assertEqual(self._estado(producto), (3.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._en_pantalla(producto), ("verde", "Acomodado", "Quitar"))
+        self.assertEqual(self._marcas(producto).cantidad, 5.0, "la marca no cambia")
+        # Bajó por una entrega parcial (lo demás sigue pendiente): también verde.
+        entregado = self._producto("Menor por entrega hoja de carga")
+        orden = self._pedido([(entregado, 5)])
+        self._acomodado(entregado)
+        self._parcial(orden, 2, backorder=True)
+        self.assertEqual(self._estado(entregado), (3.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._en_pantalla(entregado), ("verde", "Acomodado", "Quitar"))
+        # Con ☑ "Quitar" se desmarca.
+        self._quitar(producto)
+        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodado"))
+        self.assertEqual(
+            [v for v, _e in self.env["duran.hoja.carga"]._fields["estado"].selection],
+            ["sin_marcar", "acomodado", "agregado"],
+        )
+
+    def test_total_mayor_por_1_naranja(self):
+        producto = self._producto("Mayor por uno hoja de carga")
+        self._pedido([(producto, 2)])
+        self._acomodado(producto)
+        self._pedido([(producto, 1)])
+        self.assertEqual(self._estado(producto), (3.0, "agregado", "Se agregó 1"))
+        self.assertEqual(self._en_pantalla(producto), ("naranja", "Se agregó 1", "Acomodado"))
+        # 1 kg exacto también es "Se agregó 1".
+        self._pedido([(self.kilo, 1.5)])
+        self._acomodado(self.kilo)
+        self._pedido([(self.kilo, 1)])
+        self.assertEqual(self._estado(self.kilo), (2.5, "agregado", "Se agregó 1"))
+
+    def test_total_mayor_por_mas_de_1_naranja(self):
+        producto = self._producto("Mayor por varios hoja de carga")
+        self._pedido([(producto, 2)])
+        self._acomodado(producto)
+        self._pedido([(producto, 3)])
+        self.assertEqual(self._estado(producto), (5.0, "agregado", "Se agregaron 3"))
+        self.assertEqual(self._en_pantalla(producto), ("naranja", "Se agregaron 3", "Acomodado"))
+        # Por kg, menos de 1 o con decimales: coma de es_419, sin ceros sobrantes.
+        self._pedido([(self.kilo, 2)])
+        self._acomodado(self.kilo)
+        self._pedido([(self.kilo, 0.5)])
+        self.assertEqual(self._estado(self.kilo), (2.5, "agregado", "Se agregaron 0,5"))
+        self._pedido([(self.kilo, 1.25)])
+        self.assertEqual(self._en_pantalla(self.kilo), ("naranja", "Se agregaron 1,75", "Acomodado"))
+
+    def test_baja_y_luego_sube_sin_pasar_de_lo_marcado(self):
+        """ Limitación aceptada: bajó por una entrega y luego entró un pedido
+        sin pasar de lo marcado; sigue verde aunque el carrito ya tenga menos.
+        Solo se pone naranja cuando pasa de lo marcado. """
+        producto = self._producto("Baja y sube hoja de carga")
+        self._pedido([(producto, 3)])
+        cancelado = self._pedido([(producto, 2)])
+        self._acomodado(producto)
+        cancelado._action_cancel()
+        self._pedido([(producto, 2)])
+        self.assertEqual(self._estado(producto), (5.0, "acomodado", "Acomodado"))
+        self._pedido([(producto, 1)])
+        self.assertEqual(self._estado(producto), (6.0, "agregado", "Se agregó 1"))
 
     def test_quitar_es_idempotente(self):
         producto = self._producto("Quitar hoja de carga")
@@ -383,10 +472,10 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
 
         self.assertEqual(aviso("es_419"), ("agregado", "Se agregaron 2,5"))
         self.assertEqual(aviso("en_US"), ("agregado", "Se agregaron 2.5"))
-        # Marcado en 4,5 y se cancela el pedido de 2: "Ahora son 2,5".
+        # Marcado en 4,5 y se cancela el pedido de 2: lo marcado alcanza, verde.
         self._acomodado(self.kilo)
         primero._action_cancel()
-        self.assertEqual(aviso("es_419"), ("bajo", "Ahora son 2,5"))
+        self.assertEqual(aviso("es_419"), ("acomodado", "Acomodado"))
 
     def test_columna_de_cantidad(self):
         """ Total y unidad juntos: piezas sin decimales y como "pz"; kg con los
@@ -439,7 +528,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
             {
                 "decoration-success": "estado == 'acomodado'",
                 "decoration-warning": "estado == 'agregado'",
-                "decoration-info": "estado == 'bajo'",
+                "decoration-info": None,
             },
         )
         # Cuadro de marcar: ☐ Acomodado / ☑ Quitar, con su nombre (string y title).

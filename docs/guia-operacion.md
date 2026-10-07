@@ -164,12 +164,11 @@ En **Ventas › Órdenes › Hoja de carga** sale todo lo que falta entregar, **
 de cada producto:
 
 - **☐ (cuadro vacío)**: toquen para marcarlo como acomodado.
-- **Verde, ☑ (cuadro palomeado)**: acomodado; el total no ha cambiado. Para desmarcarlo, toquen
-  el cuadro palomeado.
+- **Verde, ☑ (cuadro palomeado)**: acomodado; lo que marcaron alcanza para lo pendiente (el
+  total es igual o menor que lo marcado, por ejemplo porque se canceló un pedido o ya se
+  entregó una parte). Para desmarcarlo, toquen el cuadro palomeado.
 - **Naranja** ("Se agregó 1", "Se agregaron 3"): después de marcarlo entraron pedidos de ese
   producto en esa zona. Acomoden lo nuevo y toquen otra vez el cuadro.
-- **Azul** ("Ahora son 2"): el total bajó (por ejemplo, se canceló un pedido). Revisen y toquen
-  el cuadro para dejarlo en verde.
 
 Las marcas empiezan en blanco cada día. La hoja **se actualiza sola cada 30 segundos** mientras
 la pantalla esté abierta: no hace falta recargarla para ver los pedidos nuevos. En el celular
