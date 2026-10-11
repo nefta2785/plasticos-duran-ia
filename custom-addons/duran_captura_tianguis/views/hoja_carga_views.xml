@@ -68,6 +68,6 @@
         parent="sale.sale_order_menu"
         action="hoja_carga_action"
         groups="sales_team.group_sale_manager"
-        sequence="27"/>
+        sequence="5"/>
 
 </odoo>
