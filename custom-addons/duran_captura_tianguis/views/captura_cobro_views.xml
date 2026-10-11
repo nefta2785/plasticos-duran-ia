@@ -119,6 +119,6 @@
         parent="sale.sale_order_menu"
         action="captura_cobro_action"
         groups="sales_team.group_sale_manager,group_captura_tianguis"
-        sequence="26"/>
+        sequence="8"/>
 
 </odoo>

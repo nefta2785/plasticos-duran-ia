@@ -69,6 +69,6 @@
         parent="sale.sale_order_menu"
         action="pendiente_cobro_action"
         groups="sales_team.group_sale_manager"
-        sequence="28"/>
+        sequence="6"/>
 
 </odoo>
