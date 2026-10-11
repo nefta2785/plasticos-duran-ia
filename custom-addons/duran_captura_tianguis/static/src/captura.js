@@ -723,9 +723,9 @@
             el("p", { class: "pregunta", text: "¿Qué vas a hacer?" }),
             lista([
                 botonModo("pedido", () => irA("zonas", { modo: "pedido", zona: null, cliente: null })),
+                botonModo("acomodo", () => irA("acomodo", { modo: null, zona: null, cliente: null })),
                 botonModo("entrega", () => irA("zonas", { modo: "entrega", zona: null, cliente: null })),
                 botonModo("cobro", () => irA("zonas", { modo: "cobro", zona: null, cliente: null })),
-                botonModo("acomodo", () => irA("acomodo", { modo: null, zona: null, cliente: null })),
             ])
         );
     }

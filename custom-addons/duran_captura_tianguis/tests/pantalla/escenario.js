@@ -9,13 +9,13 @@ async function pasoInicio() {
     checkOperacion(null, "Inicio (administrador)");
     check("Inicio: pregunta", txt(".pregunta"), "¿Qué vas a hacer?");
     check(
-        "Inicio: cuatro modos, Pedido, Entrega, Cobro y Acomodo de entregas",
+        "Inicio: cuatro modos, Pedido, Acomodo de entregas, Entrega y Cobro",
         qa(".btn-modo").map((b) => [b.querySelector(".modo-nombre").textContent, b.querySelector(".modo-detalle").textContent]),
         [
             ["Pedido", "Levantar un pedido nuevo"],
+            ["Acomodo de entregas", "En qué orden acomodar el carrito"],
             ["Entrega", "Entregar lo que ya pidieron"],
             ["Cobro", "Cobrar lo entregado y lo pendiente"],
-            ["Acomodo de entregas", "En qué orden acomodar el carrito"],
         ]
     );
     checkCuatroModosSinDeslizar("Inicio (administrador)");
@@ -29,9 +29,9 @@ async function pasoInicio() {
         ]),
         [
             ["📝", "Pedido", COLOR_OPERACION.pedido, "rgb(255, 255, 255)"],
+            ["🛒", "Acomodo de entregas", COLOR_OPERACION.acomodo, "rgb(255, 255, 255)"],
             ["🚚", "Entrega", COLOR_OPERACION.entrega, "rgb(255, 255, 255)"],
             ["💵", "Cobro", COLOR_OPERACION.cobro, "rgb(255, 255, 255)"],
-            ["🛒", "Acomodo de entregas", COLOR_OPERACION.acomodo, "rgb(255, 255, 255)"],
         ]
     );
     check("Inicio: sin barra de pedido ni pestañas", [q("#barra-pedido").hidden, q("#categorias").hidden], [true, true]);
@@ -1445,7 +1445,8 @@ async function pasoHistorialLargo() {
 // === Acomodo de entregas ===
 
 function checkCuatroModosSinDeslizar(pantalla) {
-    const ultimo = modo("Acomodo de entregas").getBoundingClientRect();
+    // El último botón de la pantalla, sea cual sea su operación.
+    const ultimo = qa(".btn-modo").at(-1).getBoundingClientRect();
     check(
         `${pantalla}: los 4 botones caben sin deslizar (393 x 852)`,
         [ultimo.bottom <= window.innerHeight, document.documentElement.scrollHeight <= window.innerHeight],
