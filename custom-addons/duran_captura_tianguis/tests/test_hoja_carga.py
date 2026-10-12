@@ -99,6 +99,21 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
     def _productos_prueba(self):
         return self.env["product.product"].search([("name", "ilike", "hoja de carga")])
 
+    def _paso_el_tiempo(self, producto):
+        """ La marca y lo pendiente del producto quedan una hora antes: dentro
+        de la prueba todo tiene la misma hora (la de la transacción), y así lo
+        que se cree después es posterior a la marca. """
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE duran_hoja_carga_marca SET write_date = write_date - INTERVAL '1 hour' WHERE product_id = %s",
+            [producto.id],
+        )
+        self.env.cr.execute(
+            "UPDATE stock_move SET create_date = create_date - INTERVAL '1 hour' WHERE product_id = %s",
+            [producto.id],
+        )
+        self.env.invalidate_all()
+
     def _parcial(self, orden, cantidad, backorder):
         picking = orden.picking_ids
         picking.move_ids.write({"quantity": cantidad, "picked": True})
@@ -305,13 +320,16 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual(self._estado(producto), (3.0, "acomodado", "Acomodado"))
         self.assertEqual(self._en_pantalla(producto), ("verde", "Acomodado", "Quitar"))
         self.assertEqual(self._marcas(producto).cantidad, 5.0, "la marca no cambia")
-        # Bajó por una entrega parcial (lo demás sigue pendiente): también verde.
+        # Entrega parcial con backorder (desde Odoo; la app no hace backorders):
+        # lo demás pasa a un movimiento nuevo, posterior a la marca, y sale sin
+        # marca (hay que volver a marcarlo).
         entregado = self._producto("Menor por entrega hoja de carga")
         orden = self._pedido([(entregado, 5)])
         self._acomodado(entregado)
+        self._paso_el_tiempo(entregado)
         self._parcial(orden, 2, backorder=True)
-        self.assertEqual(self._estado(entregado), (3.0, "acomodado", "Acomodado"))
-        self.assertEqual(self._en_pantalla(entregado), ("verde", "Acomodado", "Quitar"))
+        self.assertEqual(self._estado(entregado), (3.0, "sin_marcar", None))
+        self.assertEqual(self._en_pantalla(entregado), (None, None, "Acomodado"))
         # Con ☑ "Quitar" se desmarca.
         self._quitar(producto)
         self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodado"))
@@ -401,6 +419,52 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._validar(orden.picking_ids)
         self.assertFalse(self._renglon(producto))
         self.assertEqual(len(self._marcas(producto)), 1, "la marca se queda, sin renglón")
+
+    def test_todo_lo_marcado_entregado_y_pedido_nuevo_sin_marca(self):
+        """ Se marcó 2, se entregaron los 2 y entra un pedido de 1: nace sin
+        marca (antes salía verde porque 1 es menor que lo marcado). """
+        producto = self._producto("Entregado y nuevo hoja de carga")
+        primero = self._pedido([(producto, 1)])
+        segundo = self._pedido([(producto, 1)])
+        self._acomodado(producto)
+        self.assertEqual(self._estado(producto), (2.0, "acomodado", "Acomodado"))
+        self._paso_el_tiempo(producto)
+        self._validar(primero.picking_ids)
+        self._validar(segundo.picking_ids)
+        self.assertFalse(self._renglon(producto))
+        self._pedido([(producto, 1)])
+        self.assertEqual(self._estado(producto), (1.0, "sin_marcar", None))
+        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodado"))
+        self.assertEqual(self._marcas(producto).cantidad, 2.0, "la marca no se toca")
+
+    def test_volver_a_marcar_con_la_misma_cantidad_despues_de_entregar_todo(self):
+        """ Marca vieja (todo lo marcado se entregó) y el pedido nuevo trae la
+        misma cantidad: al tocar ☐ se vuelve a marcar (la misma marca). """
+        producto = self._producto("Misma cantidad hoja de carga")
+        orden = self._pedido([(producto, 2)])
+        self._acomodado(producto)
+        marca = self._marcas(producto)
+        self._paso_el_tiempo(producto)
+        self._validar(orden.picking_ids)
+        self._pedido([(producto, 2)])
+        self.assertEqual(self._estado(producto), (2.0, "sin_marcar", None))
+        self._acomodado(producto)
+        self.assertEqual(self._marcas(producto), marca)
+        self.assertEqual(self._estado(producto), (2.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._en_pantalla(producto), ("verde", "Acomodado", "Quitar"))
+
+    def test_todo_lo_marcado_cancelado_y_pedido_nuevo_sin_marca(self):
+        producto = self._producto("Cancelado y nuevo hoja de carga")
+        primero = self._pedido([(producto, 1)])
+        segundo = self._pedido([(producto, 1)])
+        self._acomodado(producto)
+        self._paso_el_tiempo(producto)
+        primero._action_cancel()
+        segundo._action_cancel()
+        self.assertFalse(self._renglon(producto))
+        self._pedido([(producto, 1)])
+        self.assertEqual(self._estado(producto), (1.0, "sin_marcar", None))
+        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodado"))
 
     def test_mismo_producto_en_dos_zonas(self):
         producto = self._producto("Dos zonas hoja de carga")

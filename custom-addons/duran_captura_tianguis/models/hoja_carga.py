@@ -82,7 +82,7 @@ class DuranHojaCarga(models.Model):
             pendiente AS (
                 -- Zona: la de la orden; si no tiene, la del cliente si tiene una sola;
                 -- si no, ninguna (como duran.captura.get_acomodo y el Pendiente de cobro).
-                SELECT sm.product_id, sm.product_qty,
+                SELECT sm.product_id, sm.product_qty, sm.create_date,
                        COALESCE(so.zona_id, (
                            SELECT MIN(z.category_id) FROM res_partner_res_partner_category_rel z
                             WHERE z.partner_id = rp.commercial_partner_id HAVING COUNT(*) = 1
@@ -99,7 +99,8 @@ class DuranHojaCarga(models.Model):
                    AND sm.state NOT IN ('draft', 'done', 'cancel')
             ),
             totales AS (
-                SELECT p.product_id, p.zona_id, ROUND(SUM(p.product_qty)::numeric, par.digitos) AS total
+                SELECT p.product_id, p.zona_id, ROUND(SUM(p.product_qty)::numeric, par.digitos) AS total,
+                       MIN(p.create_date) AS primer_pendiente
                   FROM pendiente p CROSS JOIN parametros par
                  GROUP BY p.product_id, p.zona_id, par.digitos
                 HAVING ROUND(SUM(p.product_qty)::numeric, par.digitos) > 0
@@ -108,9 +109,12 @@ class DuranHojaCarga(models.Model):
                    t.zona_id, t.product_id, t.total, pt.uom_id AS unidad_producto_id,
                    m.cantidad AS cantidad_marcada,
                    -- Verde si lo marcado alcanza para lo pendiente (total igual o menor);
-                   -- naranja solo si el total pasó de lo marcado. Limitación: si el total
-                   -- baja (por entregas) y luego vuelve a subir sin pasar de lo marcado,
-                   -- sigue verde aunque el carrito ya tenga menos de lo que se marcó.
+                   -- naranja solo si el total pasó de lo marcado. La marca solo cuenta si
+                   -- queda pendiente algo que ya existía al marcar (ver el JOIN): si todo
+                   -- lo marcado se entregó o canceló, lo que entre después sale sin marca.
+                   -- Limitación: si el total baja sin llegar a eso (entrega parcial) y
+                   -- luego vuelve a subir sin pasar de lo marcado, sigue verde aunque el
+                   -- carrito ya tenga menos de lo que se marcó.
                    CASE WHEN m.id IS NULL THEN 'sin_marcar'
                         WHEN t.total > ROUND(m.cantidad::numeric, par.digitos) THEN 'agregado'
                         ELSE 'acomodado'
@@ -123,6 +127,8 @@ class DuranHojaCarga(models.Model):
                      ON m.product_id = t.product_id
                     AND m.zona_id IS NOT DISTINCT FROM t.zona_id
                     AND m.fecha = par.hoy
+                    -- Lo pendiente más antiguo ya existía al marcar (o al cambiar la marca).
+                    AND t.primer_pendiente <= m.write_date
             """,
             tz=ZONA_HORARIA_OPERACION,
         )
@@ -178,7 +184,11 @@ class DuranHojaCarga(models.Model):
         marca = self._marca(hoy)
         valores = {"cantidad": cantidad, "user_id": self.env.uid}
         if marca:
-            if float_compare(marca.cantidad, cantidad, precision_digits=6) != 0 or marca.user_id != self.env.user:
+            # Sin marca en el renglón aunque exista: ya no cuenta (todo lo marcado
+            # se entregó o canceló). Se reescribe aunque la cantidad sea la misma,
+            # para que su fecha de cambio quede después de lo pendiente.
+            vieja = self.estado == "sin_marcar"
+            if vieja or float_compare(marca.cantidad, cantidad, precision_digits=6) != 0 or marca.user_id != self.env.user:
                 marca.write(valores)
         else:
             Marca.create({**valores, "product_id": self.product_id.id, "zona_id": self.zona_id.id, "fecha": hoy})
