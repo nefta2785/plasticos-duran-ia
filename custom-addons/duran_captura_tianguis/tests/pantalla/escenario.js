@@ -410,6 +410,7 @@ async function pasoEnviar() {
         ["Pedido enviado", "Pedido S00050", "Doña Carmen · 4 productos"]
     );
     checkExito("Pedido enviado", "PEDIDO ENVIADO");
+    check("Pedido normal: sin «Regresar a la entrega»", botonRegresarEntrega(), undefined);
     check("Enviado: sin barra del pedido", q("#barra-pedido").hidden, true);
     checkInicio("Pedido enviado");
     checkOperacion("pedido", "Pedido enviado");
@@ -854,6 +855,9 @@ async function pasoEntregaConfirmar() {
     check("Clientes de Entrega: la pregunta dice la operación", txt(".pregunta"), "¿A quién le vas a entregar?");
 }
 
+const botonRegresarEntrega = () =>
+    qa("button").find((b) => b.textContent.startsWith("‹ Regresar a la entrega de") && b.offsetParent !== null);
+
 async function pasoEntregaAlgoMasYNada() {
     boton("Cliente con historial").click();
     await espera(120);
@@ -896,15 +900,51 @@ async function pasoEntregaAlgoMasYNada() {
         [txt("#titulo"), extra.extra, extra.cliente_id, extra.lineas],
         ["Pedido enviado", true, 12, [{ producto_id: 440, cantidad: 1 }]]
     );
-    history.back(); // a Productos (ya vacío); Regresar vuelve a la entrega
-    await espera(120);
-    await regresar();
+    check(
+        "Algo más enviado: «Regresar a la entrega» como botón principal y «Cambiar de zona»",
+        qa(".lista .btn").map((b) => [b.textContent, b.classList.contains("btn-primario")]),
+        [["‹ Regresar a la entrega de Cliente con historial", true], ["Cambiar de zona", false]]
+    );
+    checkAncho("Pedido extra enviado");
+    // Con un nombre largo el texto se parte en renglones, sin cortarse ni salirse.
+    const regresarA = botonRegresarEntrega();
+    const textoOriginal = regresarA.textContent;
+    regresarA.textContent = "‹ Regresar a la entrega de Tortillería La Guadalupana de Doña Lupita";
+    check(
+        "«Regresar a la entrega» con nombre largo: cabe completo a 393 px",
+        [regresarA.scrollWidth <= regresarA.clientWidth, regresarA.getBoundingClientRect().right <= window.innerWidth,
+            regresarA.getBoundingClientRect().height > 50],
+        [true, true, true]
+    );
+    checkAncho("Pedido extra enviado, nombre largo");
+    regresarA.textContent = textoOriginal;
+    regresarA.click();
+    await espera(150);
     check(
         "Regresar: vuelve a la entrega con lo capturado",
         [txt(".pregunta"), botonNoLlevo("m201").getAttribute("aria-pressed")],
         ["¿Qué se lleva?", "true"]
     );
     checkOperacion("entrega", "de regreso de «algo más»");
+    check("De regreso de «algo más»: título del cliente y su zona", [txt("#titulo"), txt("#subtitulo")], ["Cliente con historial", "Bosques"]);
+    // Con algo capturado, salir de la entrega pregunta (como siempre); «Salir
+    // sin confirmar» conserva lo capturado.
+    await regresar();
+    check(
+        "Regresar desde esa entrega: pregunta, porque tiene algo capturado",
+        [q("#modal").hidden, txt("#modal-titulo")],
+        [false, "Esta entrega NO se ha confirmado"]
+    );
+    await responderSalida("salir");
+    check(
+        "Regresar desde esa entrega: a los clientes de Entrega",
+        [txt("#titulo"), txt("#subtitulo"), qa(".lista .btn").map((b) => b.textContent)],
+        ["Bosques", "", ["Doña Carmen", "Cliente con historial"]]
+    );
+    checkOperacion("entrega", "clientes de Entrega después de «algo más»");
+    boton("Cliente con historial").click();
+    await espera(150);
+    check("Al volver a abrirla sigue lo capturado", botonNoLlevo("m201").getAttribute("aria-pressed"), "true");
 
     // No se lleva nada: no pide peso, y confirmar pide una confirmación extra.
     q("#btn-pedido").click();
@@ -943,9 +983,9 @@ async function pasoEntregaAlgoMasYNada() {
     q("#btn-pedido").click();
     await espera(200);
     check(
-        "Pedido normal después de «algo más»: no va como extra",
-        [txt("#titulo"), "extra" in envios[envios.length - 1]],
-        ["Pedido enviado", false]
+        "Pedido normal después de «algo más»: no va como extra ni ofrece regresar",
+        [txt("#titulo"), "extra" in envios[envios.length - 1], botonRegresarEntrega()],
+        ["Pedido enviado", false, undefined]
     );
     await tocarInicio();
 }
@@ -1024,6 +1064,19 @@ async function pasoEntregaPendientes() {
     boton("Cliente con historial").click();
     await espera(120);
     check("Fantasma: el cliente ya no tiene nada pendiente", txt(".aviso"), "Este cliente ya no tiene nada pendiente de entregar.");
+    // «Algo más» sin entrega en curso (nada pendiente): enviado con los botones de siempre.
+    boton("➕ El cliente quiere algo más").click();
+    await espera(150);
+    await tocarProducto(440, 1);
+    q("#btn-pedido").click();
+    await espera(60);
+    q("#btn-pedido").click();
+    await espera(200);
+    check(
+        "Extra sin entrega en curso: va como extra, sin «Regresar a la entrega»",
+        [txt("#titulo"), envios[envios.length - 1].extra, botonRegresarEntrega(), qa(".lista .btn").map((b) => b.textContent)],
+        ["Pedido enviado", true, undefined, ["Siguiente cliente de Bosques", "Cambiar de zona"]]
+    );
     await tocarInicio();
     check(
         "Fantasma: INICIO sin preguntar y su «No se lo llevó» ya no cuenta",

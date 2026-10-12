@@ -1343,8 +1343,11 @@
             return;
         }
         estado.enviando = false;
+        // Antes de vaciar el pedido (que la apaga): ¿vino de «algo más»?
+        const extra = estado.pedidoExtra;
         vaciarPedido();
-        estado.envio = envio;
+        // Del extra se recuerda la entrega de la que salió (para regresar a ella).
+        estado.envio = extra ? { ...envio, extra: true, entrega: { cliente: estado.cliente, zona: estado.zona } } : envio;
         estado.pantalla = "enviado";
         // Reemplaza el Resumen en el historial: "atrás" ya no regresa a él.
         history.replaceState(fotoHistorial(), "");
@@ -1353,10 +1356,11 @@
 
     // === Pantallas de éxito (pedido enviado, entrega confirmada, cobro registrado) ===
 
-    function pantallaExito(titulo, detalles) {
+    function pantallaExito(titulo, detalles, principal) {
         // Bloque verde inconfundible: palomeo grande y lo que se hizo en
         // mayúsculas. Sin datos (atrás o adelante), solo el encabezado y
-        // "Ir a zonas"; con datos, debajo los detalles y a dónde seguir.
+        // "Ir a zonas"; con datos, debajo los detalles y a dónde seguir: el
+        // botón `principal` (o "Siguiente cliente") y "Cambiar de zona".
         const encabezado = el(
             "div",
             { class: "exito", role: "status" },
@@ -1379,12 +1383,13 @@
         mostrar(
             encabezado,
             lista([
-                el("button", {
-                    type: "button",
-                    class: "btn btn-primario",
-                    text: `Siguiente cliente de ${estado.zona.nombre}`,
-                    onclick: () => irA("clientes", { cliente: null }),
-                }),
+                principal ||
+                    el("button", {
+                        type: "button",
+                        class: "btn btn-primario",
+                        text: `Siguiente cliente de ${estado.zona.nombre}`,
+                        onclick: () => irA("clientes", { cliente: null }),
+                    }),
                 el("button", {
                     type: "button",
                     class: "btn btn-secundario",
@@ -1409,8 +1414,28 @@
                     class: "enviado-detalle",
                     text: `${envio.cliente} · ${plural(envio.productos, "producto", "productos")}`,
                 }),
-            ]
+            ],
+            botonRegresarAEntrega(envio)
         );
+    }
+
+    function botonRegresarAEntrega(envio) {
+        // Pedido de «algo más»: de vuelta a la entrega de la que salió, con lo
+        // capturado. Solo si esa entrega sigue en memoria con algo pendiente
+        // (si se recargó la página o no tenía nada, los botones de siempre).
+        const entrega = envio && envio.extra && envio.entrega;
+        const captura = entrega && capturas.get(entrega.cliente.id);
+        if (!captura || !captura.pendiente || !captura.pendiente.productos.length) {
+            return null;
+        }
+        return el("button", {
+            type: "button",
+            class: "btn btn-primario",
+            text: `‹ Regresar a la entrega de ${entrega.cliente.nombre}`,
+            // Como "Continuar" de Inicio: historial armado, Regresar va a los clientes de Entrega.
+            onclick: () =>
+                continuarCon({ operacion: "entrega", cliente: entrega.cliente, zona: entrega.zona, pantalla: "entrega" }),
+        });
     }
 
     // =====================================================================
