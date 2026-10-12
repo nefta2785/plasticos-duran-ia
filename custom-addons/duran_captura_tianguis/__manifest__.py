@@ -30,7 +30,7 @@ Resumen de ventas).
     "assets": {
         "web.assets_backend": [
             "duran_captura_tianguis/static/src/hoja_carga.css",
-            "duran_captura_tianguis/static/src/hoja_carga_list.js",
+            "duran_captura_tianguis/static/src/lista_recarga.js",
         ],
     },
     "installable": True,

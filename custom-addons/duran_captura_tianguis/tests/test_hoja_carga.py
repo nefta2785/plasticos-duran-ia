@@ -516,7 +516,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual(arch.xpath("//field[@name='total']/@column_invisible"), ["True"])
         # Zonas abiertas al entrar, recarga automática y piezas sin decimales.
         self.assertEqual(
-            (arch.get("expand"), arch.get("js_class"), arch.get("class")), ("1", "hoja_carga_list", "o_hoja_carga"),
+            (arch.get("expand"), arch.get("js_class"), arch.get("class")), ("1", "duran_lista_recarga", "o_hoja_carga"),
         )
         self.assertFalse(arch.xpath("//field[@sum]"), "sin suma en el pie: mezclaría kg con piezas")
         self.assertEqual(
@@ -551,6 +551,19 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual(safe_eval(self.accion.context), {"group_by": ["zona_id"]})
         self.assertFalse(self.accion.domain)
         self.assertEqual(self.accion.res_model, "duran.hoja.carga")
+
+    def test_recarga_automatica_en_las_listas_de_ordenes(self):
+        # Las otras listas de Ventas › Órdenes se recargan solas igual que la Hoja de carga.
+        for modelo, vista in (
+            ("duran.pendiente.cobro", "duran_captura_tianguis.pendiente_cobro_view_list"),
+            ("duran.captura.entrega", "duran_captura_tianguis.captura_entrega_view_list"),
+            ("duran.captura.cobro", "duran_captura_tianguis.captura_cobro_view_list"),
+        ):
+            with self.subTest(modelo=modelo):
+                arch = etree.fromstring(self.env[modelo].with_user(self.papa).get_views(
+                    [(self.env.ref(vista).id, "list")],
+                )["views"]["list"]["arch"])
+                self.assertEqual(arch.get("js_class"), "duran_lista_recarga")
 
     def test_solo_gerente_ve_y_marca(self):
         Menu = self.env["ir.ui.menu"]

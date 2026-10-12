@@ -7,7 +7,7 @@
         <field name="name">duran.pendiente.cobro.list</field>
         <field name="model">duran.pendiente.cobro</field>
         <field name="arch" type="xml">
-            <list string="Pendiente de cobro" create="false" edit="false" delete="false"
+            <list string="Pendiente de cobro" js_class="duran_lista_recarga" create="false" edit="false" delete="false"
                   default_order="orden_clave, id" decoration-danger="vencido">
                 <field name="tipo" column_invisible="True"/>
                 <field name="vencido" column_invisible="True"/>

@@ -5,7 +5,7 @@
         <field name="name">duran.captura.entrega.list</field>
         <field name="model">duran.captura.entrega</field>
         <field name="arch" type="xml">
-            <list string="Entregas en tianguis" create="false" edit="false" delete="false">
+            <list string="Entregas en tianguis" js_class="duran_lista_recarga" create="false" edit="false" delete="false">
                 <field name="fecha"/>
                 <field name="partner_id"/>
                 <field name="zona_id"/>

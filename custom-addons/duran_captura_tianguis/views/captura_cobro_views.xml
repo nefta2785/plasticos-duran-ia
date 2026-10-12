@@ -10,7 +10,7 @@
         <field name="arch" type="xml">
             <!-- Arqueo: en cada grupo (día, quién cobró) se suman el efectivo
                  recibido y lo que quedó pendiente. -->
-            <list string="Resumen de ventas" create="false" edit="false" delete="false">
+            <list string="Resumen de ventas" js_class="duran_lista_recarga" create="false" edit="false" delete="false">
                 <field name="fecha"/>
                 <field name="user_id" widget="many2one_avatar_user"/>
                 <field name="partner_id"/>

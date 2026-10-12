@@ -6,13 +6,13 @@
          Verde: lo marcado alcanza para lo pendiente; naranja: se agregó más
          de lo marcado.
          Abre con las zonas abiertas (expand) y se recarga sola
-         (js_class hoja_carga_list, static/src/hoja_carga_list.js). Pensada
+         (js_class duran_lista_recarga, static/src/lista_recarga.js). Pensada
          para caber en 393 px: la zona va solo en el encabezado del grupo. -->
     <record id="hoja_carga_view_list" model="ir.ui.view">
         <field name="name">duran.hoja.carga.list</field>
         <field name="model">duran.hoja.carga</field>
         <field name="arch" type="xml">
-            <list string="Hoja de carga" class="o_hoja_carga" js_class="hoja_carga_list" expand="1"
+            <list string="Hoja de carga" class="o_hoja_carga" js_class="duran_lista_recarga" expand="1"
                   create="false" edit="false" delete="false"
                   decoration-success="estado == 'acomodado'"
                   decoration-warning="estado == 'agregado'">
