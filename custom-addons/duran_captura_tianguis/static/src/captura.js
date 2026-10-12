@@ -56,6 +56,7 @@
         habituales: [], // "Lo de siempre" del cliente actual
         clienteDibujado: null, // para abrir "Lo de siempre" al llegar a otro cliente
         token: null, // identifica ESTE pedido ante el servidor (evita duplicados)
+        pedidoExtra: false, // pedido de «El cliente quiere algo más»: fuera de la entrega en curso
         enviando: false,
         errorEnvio: null,
         envio: null, // respuesta del servidor del último pedido enviado
@@ -500,6 +501,7 @@
         estado.pedido.clear();
         estado.token = null;
         estado.errorEnvio = null;
+        estado.pedidoExtra = false;
     }
 
     function avisarAntesDeSalir(evento) {
@@ -1017,7 +1019,7 @@
         // Directo a sus productos. Reemplaza "Cliente nuevo" en el historial:
         // Regresar desde Productos vuelve a Clientes (que ya lo incluye).
         clienteNuevo = null;
-        Object.assign(estado, { pantalla: "productos", modo: "pedido", cliente });
+        Object.assign(estado, { pantalla: "productos", modo: "pedido", cliente, pedidoExtra: false });
         history.replaceState(fotoHistorial(), "");
         dibujar();
     }
@@ -1033,6 +1035,9 @@
             if (respuesta !== "no") {
                 return;
             }
+        }
+        if (pantalla === "productos") {
+            estado.pedidoExtra = false; // pedido normal, elegido de la lista
         }
         irA(pantalla, { cliente });
     }
@@ -1325,6 +1330,8 @@
                 zona_id: estado.zona.id,
                 token: estado.token,
                 lineas: lineas.map(({ producto, cantidad }) => ({ producto_id: producto.id, cantidad })),
+                // Solo el de «algo más»: queda para la siguiente vuelta.
+                ...(estado.pedidoExtra ? { extra: true } : {}),
             });
         } catch (error) {
             estado.enviando = false;
@@ -1622,7 +1629,9 @@
             class: "btn btn-secundario btn-algo-mas",
             text: "➕ El cliente quiere algo más",
             // Al Modo Pedido con este cliente ya elegido; "Regresar" vuelve aquí.
-            onclick: () => irA("productos", { modo: "pedido" }),
+            // Es un pedido extra: no entra en esta entrega, queda para la
+            // siguiente vuelta (el servidor lo deja fuera).
+            onclick: () => irA("productos", { modo: "pedido", pedidoExtra: true }),
         });
     }
 

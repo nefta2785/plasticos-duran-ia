@@ -55,6 +55,12 @@ let siguienteFolio = 50;
 
 function enviarSimulado(params) {
     envios.push(params);
+    // `extra` (pedido de «El cliente quiere algo más»): solo se manda, y como true.
+    if ("extra" in params && params.extra !== true) {
+        return {
+            error: { code: 200, message: "Odoo Server Error", data: { name: "TypeError", message: "extra inválido" } },
+        };
+    }
     if (modoEnvio === "sin-red") {
         // El servidor SÍ creó la orden, pero la respuesta no llegó.
         modoEnvio = "ok";

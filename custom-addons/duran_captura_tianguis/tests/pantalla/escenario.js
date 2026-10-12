@@ -390,6 +390,7 @@ async function pasoEnviar() {
         [primero.cliente_id, primero.zona_id, primero.lineas, /^[0-9a-f]{32}$/.test(primero.token)],
         [9, 1, [{ producto_id: 440, cantidad: 2 }, { producto_id: 409, cantidad: 1 }, { producto_id: 464, cantidad: 1 }], true]
     );
+    check("Pedido normal: no va como extra", "extra" in primero, false);
     check(
         "Sin señal: mensaje claro y el pedido sigue",
         [txt(".error-envio"), txt("#pedido-conteo"), q("#btn-pedido").disabled],
@@ -883,6 +884,20 @@ async function pasoEntregaAlgoMasYNada() {
     );
     await restarProducto(440);
     check("Algo más: «−» en 1 lo quita", [cantidad(440), txt("#pedido-conteo")], [null, "Pedido vacío"]);
+    // Se envía: es un pedido extra (queda fuera de esta entrega, para la siguiente vuelta).
+    await tocarProducto(440, 1);
+    q("#btn-pedido").click();
+    await espera(60);
+    q("#btn-pedido").click();
+    await espera(200);
+    const extra = envios[envios.length - 1];
+    check(
+        "Algo más: se envía como pedido extra del mismo cliente",
+        [txt("#titulo"), extra.extra, extra.cliente_id, extra.lineas],
+        ["Pedido enviado", true, 12, [{ producto_id: 440, cantidad: 1 }]]
+    );
+    history.back(); // a Productos (ya vacío); Regresar vuelve a la entrega
+    await espera(120);
     await regresar();
     check(
         "Regresar: vuelve a la entrega con lo capturado",
@@ -914,6 +929,25 @@ async function pasoEntregaAlgoMasYNada() {
     check("Nada: éxito con Cobrar $0.00", txt(".cobrar"), "Cobrar: $0.00");
     await tocarInicio();
     check("INICIO desde Entrega confirmada: directo, sin preguntar", [txt("#titulo"), q("#modal").hidden], ["Captura", true]);
+
+    // Un pedido normal después de «algo más» ya no va como extra.
+    modo("Pedido").click();
+    await espera(80);
+    boton("Bosques").click();
+    await espera(80);
+    boton("Doña Carmen").click();
+    await espera(150);
+    await tocarProducto(440, 1);
+    q("#btn-pedido").click();
+    await espera(60);
+    q("#btn-pedido").click();
+    await espera(200);
+    check(
+        "Pedido normal después de «algo más»: no va como extra",
+        [txt("#titulo"), "extra" in envios[envios.length - 1]],
+        ["Pedido enviado", false]
+    );
+    await tocarInicio();
 }
 
 

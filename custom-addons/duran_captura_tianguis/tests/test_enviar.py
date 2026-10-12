@@ -75,6 +75,20 @@ class TestEnviarHttp(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual((primera["ya_existia"], segunda["ya_existia"]), (False, True))
         self.assertEqual(self.env["sale.order"].search_count([("captura_token", "=", token)]), 1)
 
+    def test_pedido_extra_queda_marcado_y_no_se_copia(self):
+        """ «El cliente quiere algo más» manda `extra`: la orden queda marcada
+        (fuera de la entrega en curso). Un pedido normal no; duplicarla tampoco. """
+        self._entrar(self.usuario_captura)
+        normal = self._enviar([(self.normal, 1)])
+        extra = self._resultado("/captura/api/enviar", {**self._params_envio([(self.normal, 1)]), "extra": True})
+        self.env.invalidate_all()
+        Orden = self.env["sale.order"]
+        self.assertFalse(Orden.browse(normal["id"]).captura_pedido_extra)
+        orden_extra = Orden.browse(extra["id"])
+        self.assertTrue(orden_extra.captura_pedido_extra)
+        self.assertEqual(orden_extra.state, "sale", "también nace confirmada")
+        self.assertFalse(orden_extra.copy().captura_pedido_extra)
+
     def test_vendedor_es_quien_captura_aunque_el_cliente_tenga_vendedor(self):
         self.cliente.user_id = self.usuario_sin_grupo
         self._entrar(self.usuario_captura)

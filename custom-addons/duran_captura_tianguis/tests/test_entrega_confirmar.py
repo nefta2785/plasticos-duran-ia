@@ -284,6 +284,62 @@ class TestEntregaConfirmar(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual([e["folio"] for e in resultado["entregas"]], [o1.picking_ids.name])
         self.assertEqual((nueva.picking_ids.state, nueva.order_line.product_uom_qty), ("assigned", 5.0))
 
+    # === Pedido extra («El cliente quiere algo más») === #
+
+    def _productos_pendientes(self):
+        pendiente = self._resultado(RUTA_PENDIENTE, {
+            "cliente_id": self.cliente.id, "zona_id": self.zona_con_clientes.id,
+        })
+        return {p["id"]: p["cantidad"] for p in pendiente["productos"]}
+
+    def _extra(self, lineas):
+        return self._confirmada(self.cliente, lineas, vendedor=self.mama, captura_pedido_extra=True)
+
+    def test_pedido_extra_queda_fuera_hasta_que_se_cancela_la_orden_anterior(self):
+        # La orden normal es de otro vendedor: quien captura no la puede leer y
+        # aun así se separa el extra (sin error de acceso).
+        normal = self._confirmada(self.cliente, [(self.pieza, 2)], vendedor=self.otro_vendedor)
+        extra = self._extra([(self.pieza, 5), (self.rollo, 1)])
+        self.assertEqual(self._productos_pendientes(), {self.pieza.id: 2.0})
+        # Vista previa: lo del extra no se puede entregar.
+        (rollo_extra,) = self._movimientos(extra, self.rollo)
+        for entrega in ({"productos": [(self.pieza, 3)]}, {"rollos": [(rollo_extra, "1.2")]}):
+            with self.subTest(entrega=entrega):
+                params = {
+                    k: v for k, v in self._params(**entrega).items() if k not in ("movimientos_vistos", "token")
+                }
+                self.assertIn("error", self._jsonrpc(RUTA_VISTA_PREVIA, params))
+        # No se lleva nada: se cancela la orden normal; el extra ni se cancela ni se entrega.
+        resultado = self._confirmar()
+        self.assertEqual([e["folio"] for e in resultado["entregas"]], [normal.picking_ids.name])
+        self.assertEqual(normal.picking_ids.state, "cancel")
+        self.assertNotIn(extra.picking_ids.state, ("done", "cancel"))
+        self.assertEqual(extra.order_line.mapped("product_uom_qty"), [5.0, 1.0])
+        # Ya sin la orden anterior pendiente, el extra aparece como cualquier pendiente.
+        self.assertEqual(self._productos_pendientes(), {self.pieza.id: 5.0, self.rollo.id: 1.0})
+
+    def test_pedido_extra_aparece_cuando_se_entrego_la_orden_anterior(self):
+        normal = self._confirmada(self.cliente, [(self.pieza, 2)])
+        extra = self._extra([(self.pieza, 1)])
+        self._confirmar(productos=[(self.pieza, 2)])
+        self.assertEqual(normal.picking_ids.state, "done")
+        self.assertNotIn(extra.picking_ids.state, ("done", "cancel"))
+        self.assertEqual(extra.order_line.product_uom_qty, 1.0)
+        self.assertEqual(self._productos_pendientes(), {self.pieza.id: 1.0})
+        resultado = self._confirmar(productos=[(self.pieza, 1)])
+        self.assertEqual([e["folio"] for e in resultado["entregas"]], [extra.picking_ids.name])
+        self.assertEqual(extra.picking_ids.state, "done")
+
+    def test_pedido_extra_sin_orden_anterior_pendiente_se_ve_normal(self):
+        # Solo el extra (p. ej. lo pidió cuando ya no tenía nada pendiente).
+        extra = self._extra([(self.pieza, 2)])
+        self.assertEqual(self._productos_pendientes(), {self.pieza.id: 2.0})
+        # Una orden normal MÁS NUEVA que el extra no lo detiene: salen las dos.
+        self._confirmada(self.cliente, [(self.pieza, 1)])
+        self.assertEqual(self._productos_pendientes(), {self.pieza.id: 3.0})
+        self._confirmar(productos=[(self.pieza, 3)])
+        self.assertEqual(extra.picking_ids.state, "done")
+
     def test_falla_a_mitad_del_proceso_no_deja_nada(self):
         o1 = self._confirmada(self.cliente, [(self.rollo, 2), (self.pieza, 3)], vendedor=self.otro_vendedor)
         o2 = self._confirmada(self.cliente, [(self.pieza, 1)])

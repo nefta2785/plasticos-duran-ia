@@ -144,7 +144,7 @@ class DuranCaptura(models.AbstractModel):
         return [self._get_producto_vals(producto, currency, uom_unidad) for producto in productos]
 
     @api.model
-    def enviar_pedido(self, cliente_id, zona_id, lineas, token):
+    def enviar_pedido(self, cliente_id, zona_id, lineas, token, extra=False):
         """ Crea SIEMPRE una orden nueva para el cliente (nunca suma a una
         existente), marcada con la zona desde la que se eligió y con quien
         captura como vendedor, y la confirma.
@@ -153,6 +153,8 @@ class DuranCaptura(models.AbstractModel):
         :param token: identificador del pedido generado por la pantalla. Si ya
             hay una orden con ese token (doble toque, reintento tras perder la
             señal), se devuelve esa orden en lugar de crear otra.
+        :param extra: levantado con «El cliente quiere algo más» durante una
+            entrega: queda fuera de esa entrega (ver `_movimientos_pendientes`).
 
         Todo corre en una sola transacción: si algo falla (incluida la
         confirmación), no queda ninguna orden a medias. """
@@ -183,6 +185,7 @@ class DuranCaptura(models.AbstractModel):
             "zona_id": zona.id,
             "user_id": self.env.user.id,
             "captura_token": token,
+            "captura_pedido_extra": bool(extra),
             "order_line": [
                 Command.create({"product_id": producto_id, "product_uom_qty": cantidad})
                 for producto_id, cantidad in cantidades.items()
@@ -931,11 +934,34 @@ class DuranCaptura(models.AbstractModel):
     @api.model
     def _movimientos_pendientes(self, cliente):
         """ Movimientos pendientes de las entregas de venta pendientes del
-        cliente, de la orden más antigua (creada primero) a la más nueva. """
-        return self._entregas_pendientes(cliente).move_ids.filtered(
+        cliente, de la orden más antigua (creada primero) a la más nueva, sin
+        los pedidos extra en espera (`_extras_en_espera`). """
+        entregas = self._entregas_pendientes(cliente)
+        entregas -= self._extras_en_espera(entregas)
+        return entregas.move_ids.filtered(
             lambda m: m.state not in ("done", "cancel")
             and m.product_uom.compare(m.product_uom_qty, 0.0) > 0
         ).sorted(lambda m: (m.picking_id.sale_id.id, m.sale_line_id.id or 0, m.id))
+
+    @api.model
+    def _extras_en_espera(self, entregas):
+        """ De las entregas pendientes de un cliente, las de pedidos extra
+        («El cliente quiere algo más») que esperan a la siguiente vuelta: las
+        que tienen pendiente una orden normal más antigua (creada antes). Así
+        el extra no se entrega ni se cancela con la entrega en curso; cuando
+        esa orden se entrega o cancela, aparece como cualquier pendiente.
+
+        Con búsqueda y no leyendo la orden: con "Ventas: solo sus documentos"
+        quien captura no puede leer órdenes de otros vendedores (las normales
+        pueden serlo); los extra son suyos. """
+        extras = self.env["stock.picking"].search([
+            ("id", "in", entregas.ids), ("sale_id.captura_pedido_extra", "=", True),
+        ])
+        normales = (entregas - extras).sale_id.ids
+        if not extras or not normales:
+            return extras.browse()
+        mas_antigua = min(normales)
+        return extras.filtered(lambda entrega: entrega.sale_id.id > mas_antigua)
 
     @api.model
     def _precio_de_lineas(self, grupo, currency, uom_unidad):
