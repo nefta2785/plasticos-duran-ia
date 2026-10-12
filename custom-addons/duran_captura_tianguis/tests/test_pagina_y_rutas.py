@@ -180,6 +180,58 @@ class TestPaginaYRutas(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual(categoria["nombre"], "Categoría prueba captura / Subcategoría prueba")
         self.assertEqual([p["id"] for p in categoria["productos"]], [producto.id])
 
+    def _categorias_con_producto(self, nombres, **vals):
+        """ Categorías nuevas, cada una con un producto vendible, para que
+        salgan en el catálogo. """
+        categorias = self.env["product.category"]
+        for nombre in nombres:
+            categoria = self.env["product.category"].create({"name": nombre, **vals})
+            self._plantilla(f"Producto de {nombre}", categ_id=categoria.id)
+            categorias |= categoria
+        return categorias
+
+    def _orden_en_catalogo(self, categorias):
+        self._entrar(self.usuario_captura)
+        ids = [c["id"] for c in self._resultado("/captura/api/catalogo")]
+        return [i for i in ids if i in categorias.ids], ids
+
+    def test_orden_de_categorias_por_el_campo_de_la_app(self):
+        """ Con "Orden en la app", las categorías siguen ese orden (no el
+        alfabético) y van antes que todas las que no lo tienen. """
+        rollos, asa, basura = self._categorias_con_producto(
+            ["Orden prueba Rollos", "Orden prueba Asa", "Orden prueba Basura"],
+        )
+        rollos.captura_orden, asa.captura_orden, basura.captura_orden = 1, 2, 4
+        sin_orden = self._categorias_con_producto(["Orden prueba Zeta sin orden", "Orden prueba Alfa sin orden"])
+        orden, todas = self._orden_en_catalogo(rollos | asa | basura | sin_orden)
+        self.assertEqual(orden, [rollos.id, asa.id, basura.id, *sin_orden.sorted("complete_name").ids])
+        # Todas las que tienen orden (también las reales de la base) van antes que las que no.
+        Categoria = self.env["product.category"]
+        con_orden = [bool(Categoria.browse(i).captura_orden) for i in todas]
+        self.assertEqual(con_orden, sorted(con_orden, reverse=True))
+        # El texto del botón sigue siendo el nombre completo de la categoría.
+        catalogo = {c["id"]: c["nombre"] for c in self._resultado("/captura/api/catalogo")}
+        self.assertEqual(catalogo[asa.id], "Orden prueba Asa")
+
+    def test_sin_orden_queda_el_orden_alfabetico(self):
+        """ Sin "Orden en la app" (0 o vacío), el orden alfabético de siempre. """
+        categorias = self._categorias_con_producto(
+            ["Alfabético prueba C", "Alfabético prueba A", "Alfabético prueba B"],
+        )
+        categorias[0].captura_orden = 0
+        orden, _todas = self._orden_en_catalogo(categorias)
+        self.assertEqual(orden, categorias.sorted("complete_name").ids)
+        self.assertEqual(
+            [self.env["product.category"].browse(i).name for i in orden],
+            ["Alfabético prueba A", "Alfabético prueba B", "Alfabético prueba C"],
+        )
+
+    def test_orden_visible_en_el_formulario_de_categoria(self):
+        arch = self.env["product.category"].get_views(
+            [(self.env.ref("product.product_category_form_view").id, "form")],
+        )["views"]["form"]["arch"]
+        self.assertIn('name="captura_orden"', arch)
+
     # === Rutas JSON sin grupo / sin sesión === #
 
     def test_api_sin_grupo_da_access_error(self):

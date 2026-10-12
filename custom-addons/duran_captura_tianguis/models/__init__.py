@@ -6,3 +6,4 @@ from . import captura_cobro
 from . import stock_move
 from . import pendiente_cobro
 from . import hoja_carga
+from . import product_category

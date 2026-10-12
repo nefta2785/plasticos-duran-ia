@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Orden de los botones de categoría en la pantalla Pedido de /captura. -->
+    <record id="product_category_form_view_captura" model="ir.ui.view">
+        <field name="name">product.category.form.captura</field>
+        <field name="model">product.category</field>
+        <field name="inherit_id" ref="product.product_category_form_view"/>
+        <field name="arch" type="xml">
+            <field name="parent_id" position="after">
+                <field name="captura_orden"/>
+            </field>
+        </field>
+    </record>
+
+</odoo>

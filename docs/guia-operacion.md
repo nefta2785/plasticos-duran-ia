@@ -105,6 +105,8 @@ tienen los mismos colores.
 **Al levantar un pedido, para agregar más de uno toquen "+"; para quitar, toquen "−".** Con 1,
 el "−" quita el producto del pedido. Tocar el nombre del producto no hace nada.
 
+**El orden de los botones de grupo de productos en Pedido** (Rollos, Bolsas asa…) se cambia en Odoo: Ventas › Configuración › Productos › Categorías, abrir la categoría y poner su **Orden en la app** (1 va primero, después de "⭐ Lo de siempre"; con 0 va al final, en orden alfabético).
+
 **Para acomodar el carrito, toquen "Acomodo de entregas"** en la pantalla de inicio. Salen los
 pedidos que falta entregar, separados por zona y **del último pedido al primero, en el orden en
 que se carga el carrito**: el primero de la lista se carga primero y va hasta el fondo. El

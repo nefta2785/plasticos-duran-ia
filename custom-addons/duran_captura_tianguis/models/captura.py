@@ -74,10 +74,19 @@ class DuranCaptura(models.AbstractModel):
 
     @api.model
     def get_catalogo(self):
-        """ Variantes activas y vendibles agrupadas por categoría. """
+        """ Variantes activas y vendibles agrupadas por categoría. Las
+        categorías van por su "Orden en la app" (`captura_orden`); las que no
+        lo tienen (0 o vacío), al final y en orden alfabético. """
         productos = self.env["product.product"].search(self._dominio_productos_vendibles())
         productos = productos.sorted(
-            lambda p: (p.categ_id.complete_name or "", p.name.lower(), p.id)
+            lambda p: (
+                not p.categ_id.captura_orden,
+                p.categ_id.captura_orden,
+                p.categ_id.complete_name or "",
+                p.categ_id.id,
+                p.name.lower(),
+                p.id,
+            )
         )
         currency = self.env.company.currency_id
         uom_unidad = self.env.ref("uom.product_uom_unit", raise_if_not_found=False)
