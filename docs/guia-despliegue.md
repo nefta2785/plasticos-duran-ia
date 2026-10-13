@@ -10,10 +10,13 @@ en la VM de Oracle, con HTTPS por IP, y cómo operarla después.
 > - **Qué hace**, en una frase.
 > - **Cómo saber que salió bien.**
 >
-> Los pasos marcados con ⚠️ **Sin verificar** no están confirmados en documentación oficial:
-> hazlos con calma y revisa el resultado antes de seguir. (⚠️ se usa **solo** para eso.)
+> Los pasos marcados con ⚠️ **Sin verificar** no están confirmados en documentación oficial ni
+> probados en la VM: hazlos con calma y revisa el resultado antes de seguir. (⚠️ se usa **solo**
+> para eso.)
 >
 > 🚫 marca algo que **no** se debe hacer.
+>
+> ✅ **Verificado el 12-oct-2026 en la VM** marca lo que ya se probó en la VM real.
 >
 > **Nunca** pegues contraseñas, el contenido de `.env` ni el de `odoo.conf` en un chat, un
 > issue o un commit.
@@ -48,7 +51,8 @@ en la VM de Oracle, con HTTPS por IP, y cómo operarla después.
 |---|---|
 | VM | Oracle, Ubuntu 22.04, ARM64 (aarch64), 2 OCPU, 12 GB RAM, Docker y Compose instalados |
 | IP pública | `160.34.211.158` (efímera, sin dominio) |
-| Usuario de la VM | `ubuntu` ⚠️ **Sin verificar**: es el usuario habitual de las imágenes Ubuntu de Oracle; si el tuyo es otro, cámbialo en todos los comandos y en `docker/prod/cron/duran-respaldo` |
+| Usuario de la VM | `ubuntu` ✅ **Verificado el 12-oct-2026 en la VM** (Ubuntu 22.04.5 aarch64, Docker 29.9) |
+| Firewall | 80 y 443 abiertos en Oracle y en iptables ✅ **Verificado el 12-oct-2026 en la VM**, incluida una prueba de reinicio (sección 2) |
 | Carpeta del repo en la VM | `/home/ubuntu/plasticos-duran-ia` |
 | Base de datos | `duranPROD` |
 | Imágenes | Las mismas probadas en DEV, fijadas por digest en `docker/prod/docker-compose.yml`: Odoo 19.0-20260908, PostgreSQL 15.19, nginx 1.30.5 |
@@ -137,22 +141,56 @@ El tráfico tiene **dos** filtros y los dos deben dejar pasar los puertos 80 y 4
 
 El 80 se queda abierto siempre: Let's Encrypt renueva el certificado por ahí cada pocos días.
 
+> ✅ **Verificado el 12-oct-2026 en la VM** (Ubuntu 22.04.5 aarch64, Docker 29.9, usuario
+> `ubuntu`): el procedimiento de los pasos 2.1 a 2.8, incluida la prueba de reinicio (2.8).
+> El paso 2.9 (opcional) no se ha ejecutado.
+>
+> ⚠️ **Sin verificar:** la redacción exacta del `sed` de 2.5 y de los comandos de prueba de 2.7
+> se escribió después, a partir de lo que se hizo en la VM. El `sed` se probó con GNU sed sobre
+> una copia de ejemplo de `rules.v4` (no sobre el archivo real). Revisa la salida del `grep` de
+> 2.5 antes de seguir.
+
+**Lo que se encontró en la VM antes de abrir nada** (12-oct-2026):
+- Las reglas se cargan al arrancar con **netfilter-persistent** desde
+  `/etc/iptables/rules.v4`. Ese archivo **no** tiene cadenas de Docker (es anterior a Docker).
+- **ufw** no se usa: el servicio aparece "active", pero `sudo ufw status` dice `inactive` y
+  `/etc/ufw/ufw.conf` tiene `ENABLED=no`. No se toca.
+- La cadena INPUT trae, en orden: `RELATED,ESTABLISHED`; `icmp`; `lo`; `8069` (resto de otro
+  proyecto, ver 2.9); `22`; y al final un `REJECT --reject-with icmp-host-prohibited`.
+- 80 y 443 estaban **cerrados** hasta que se abrieron con los pasos 2.4 y 2.5.
+
+> 🚫 **No uses `ufw`** en esta VM: Oracle advierte que editar reglas con UFW en sus imágenes de
+> Ubuntu puede dejar la instancia sin arrancar.
+>
+> 🚫 **No uses `sudo netfilter-persistent save`** (es lo que dice el tutorial de Oracle; esta
+> guía lo usaba antes). Guarda **todo** el estado actual de iptables, incluidas las cadenas que
+> Docker crea al arrancar (`DOCKER`, `DOCKER-FORWARD`, etc.). En el siguiente reinicio esas
+> cadenas se cargarían desde el archivo y Docker las volvería a crear, y podrían duplicarse o
+> chocar. ⚠️ **Sin verificar:** esto es una **precaución**, no algo que se haya visto fallar. Por
+> eso aquí se editan solo las dos líneas necesarias en `rules.v4` (paso 2.5).
+
 ### 2.1 Security List de Oracle
 
 **Dónde:** Navegador (consola de Oracle Cloud)
 
 Networking › Virtual Cloud Networks › tu VCN › la subred de la VM › Security List › **Add
-Ingress Rules**. Agrega dos reglas:
+Ingress Rules** (Agregar reglas de entrada). Agrega **dos reglas separadas**:
 
-| Source CIDR | IP Protocol | Destination Port Range |
-|---|---|---|
-| `0.0.0.0/0` | TCP | `80` |
-| `0.0.0.0/0` | TCP | `443` |
+| Source CIDR (CIDR de origen) | IP Protocol | Source Port Range (rango de puertos de **origen**) | Destination Port Range (rango de puertos de **destino**) |
+|---|---|---|---|
+| `0.0.0.0/0` | TCP | **vacío** (Todo) | `80` |
+| `0.0.0.0/0` | TCP | **vacío** (Todo) | `443` |
 
 **Qué hace:** deja entrar a la VM las conexiones web desde internet.
 
-**Cómo saber que salió bien:** las dos reglas aparecen en la lista de Ingress Rules. Si la VM
-usa un **Network Security Group** en lugar de (o además de) la Security List, las reglas van ahí.
+> **Error ya visto:** poner `80` en el puerto de **origen** y `443` en el de **destino** en la
+> misma regla **no abre nada**: el puerto de origen lo elige el navegador al azar, nunca es 80.
+> El puerto va **solo** en destino, y cada puerto en su propia regla.
+
+**Cómo saber que salió bien:** en la tabla de Ingress Rules hay dos reglas nuevas con CIDR de
+origen `0.0.0.0/0`, protocolo TCP, la columna del rango de puertos de **origen** dice **Todo**
+(All) y la de **destino** dice `80` en una y `443` en la otra. Si la VM usa un **Network
+Security Group** en lugar de (o además de) la Security List, las reglas van ahí.
 
 ### 2.2 Ver cómo está iptables en la VM (diagnóstico, no cambia nada)
 
@@ -160,38 +198,200 @@ usa un **Network Security Group** en lugar de (o además de) la Security List, l
 
 ```
 sudo iptables -L INPUT -n --line-numbers
+systemctl is-active netfilter-persistent
+sudo ufw status
 ```
 
-**Qué hace:** lista las reglas de entrada de la VM, numeradas.
+**Qué hace:** lista las reglas de entrada numeradas, y muestra si netfilter-persistent está
+activo y si ufw está en uso.
 
-**Cómo saber qué tienes:** busca una línea `REJECT ... reject-with icmp-host-prohibited`. Si
-existe, todo lo que no esté permitido **antes** de esa línea se rechaza. Anota su número.
+**Cómo saber qué tienes:** busca la línea `REJECT ... reject-with icmp-host-prohibited` y
+**anota su número** (en la VM, el 12-oct-2026, era la **6**). Todo lo que no esté permitido
+**antes** de esa línea se rechaza. netfilter-persistent debe decir `active`, y ufw `inactive`.
 
-> 🚫 **No uses `ufw`** en esta VM: Oracle advierte que editar reglas con UFW en sus imágenes de
-> Ubuntu puede dejar la instancia sin arrancar.
-
-### 2.3 Abrir 80 y 443 en iptables
+### 2.3 Copia de seguridad del archivo de reglas
 
 **Dónde:** VM
 
-Sustituye `<N>` por el número de la línea `REJECT` del paso 2.2 (las reglas nuevas quedan
-justo antes de ella):
-
 ```
-sudo iptables -I INPUT <N> -m state --state NEW -p tcp --dport 443 -j ACCEPT
-sudo iptables -I INPUT <N> -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo netfilter-persistent save
+sudo cp -a /etc/iptables/rules.v4 /etc/iptables/rules.v4.bak-$(date +%Y%m%d)
+ls -l /etc/iptables/
 ```
 
-**Qué hace:** permite conexiones nuevas a 80 y 443 y guarda las reglas para que sobrevivan a un
-reinicio. Es el método del tutorial oficial de Oracle para Ubuntu.
+**Qué hace:** guarda una copia del archivo que se carga al arrancar, con la fecha en el nombre.
 
-**Cómo saber que salió bien:** repite el paso 2.2: las reglas `tcp dpt:80` y `tcp dpt:443` con
-`ACCEPT` aparecen **antes** del `REJECT`.
+**Cómo saber que salió bien:** aparece `rules.v4.bak-AAAAMMDD` (la fecha de hoy) con el mismo
+tamaño que `rules.v4`. Si algo sale mal en 2.5, se recupera con
+`sudo cp -a /etc/iptables/rules.v4.bak-AAAAMMDD /etc/iptables/rules.v4`.
 
-> ⚠️ **Sin verificar:** Docker dirige el tráfico de los puertos publicados por la tabla `nat`,
-> antes de la cadena INPUT (documentación de Docker), así que es posible que nginx funcione aun
-> sin estas reglas. Se abren de todos modos: no estorban y dejan claro qué está permitido.
+### 2.4 Abrir 80 y 443 en vivo
+
+**Dónde:** VM
+
+Sustituye `<N>` por el número de la línea `REJECT` que anotaste en 2.2, y `<N+1>` por ese número
+más uno (en la VM fueron `6` y `7`):
+
+```
+sudo iptables -I INPUT <N> -p tcp -m state --state NEW --dport 80 -j ACCEPT
+sudo iptables -I INPUT <N+1> -p tcp -m state --state NEW --dport 443 -j ACCEPT
+sudo iptables -L INPUT -n --line-numbers
+```
+
+**Qué hace:** inserta las dos reglas justo antes del `REJECT` (al insertar la del 80, el `REJECT`
+baja una posición; por eso la del 443 va en `<N+1>`). Esto cambia las reglas **en memoria**: si
+la VM se reinicia ahora, se pierden. El paso 2.5 las guarda.
+
+**Cómo saber que salió bien:** en la lista aparecen `tcp dpt:80` y `tcp dpt:443` con `ACCEPT`,
+**una vez cada una**, y **antes** del `REJECT`.
+
+> **No pegues dos veces** los comandos `iptables -I`: cada vez agregan otra regla igual. Si quedó
+> duplicada, bórrala por su número con `sudo iptables -D INPUT <n>`. Si hay que borrar varias,
+> empieza por la de **número más alto**: al borrar una, las de abajo suben una posición.
+
+### 2.5 Guardar las dos reglas en `rules.v4`
+
+**Dónde:** VM
+
+```
+sudo sed -i \
+  -e '/^-A INPUT -j REJECT --reject-with icmp-host-prohibited$/i -A INPUT -p tcp -m state --state NEW -m tcp --dport 80 -j ACCEPT' \
+  -e '/^-A INPUT -j REJECT --reject-with icmp-host-prohibited$/i -A INPUT -p tcp -m state --state NEW -m tcp --dport 443 -j ACCEPT' \
+  /etc/iptables/rules.v4
+sudo grep -n -E -- '--dport (80|443) |REJECT' /etc/iptables/rules.v4
+```
+
+**Qué hace:** escribe en el archivo que se carga al arrancar las mismas dos reglas, justo antes
+de la línea `-A INPUT -j REJECT --reject-with icmp-host-prohibited`. No toca nada más (el
+`REJECT` de FORWARD no cambia) y no guarda las cadenas de Docker.
+
+**Cómo saber que salió bien:** `grep` muestra, seguidas, las líneas `--dport 80` y
+`--dport 443` e inmediatamente después `-A INPUT -j REJECT ...`; cada una **una sola vez**.
+Si `sed` se corrió dos veces y quedaron repetidas, recupera la copia de 2.3 y repite este paso.
+
+### 2.6 Validar la sintaxis del archivo
+
+**Dónde:** VM
+
+```
+sudo sh -c 'iptables-restore --test < /etc/iptables/rules.v4' && echo "SINTAXIS OK"
+```
+
+**Qué hace:** pide a iptables que lea el archivo **sin aplicarlo**, para comprobar que no tiene
+errores. La redirección `<` va **dentro** de `sudo sh -c '...'`: escrita afuera
+(`sudo iptables-restore --test < ...`), la lee tu usuario sin permisos y da "Permission denied".
+
+**Cómo saber que salió bien:** imprime `SINTAXIS OK`. Si da error, **no reinicies**: recupera la
+copia de 2.3.
+
+### 2.7 Probar desde internet con un servidor temporal
+
+Todavía no hay nada escuchando en 80 ni en 443 (el Docker de producción se levanta en el paso 4),
+así que se usa un servidor de prueba de Python que se apaga solo a los 2 minutos.
+
+**Dónde:** VM
+
+```
+mkdir -p /tmp/vacio
+sudo timeout 120 python3 -m http.server 80 --directory /tmp/vacio &
+sudo timeout 120 python3 -m http.server 443 --directory /tmp/vacio &
+sleep 2
+sudo ss -tlnp | grep -E ':(80|443) '
+```
+
+**Qué hace:** levanta dos servidores web vacíos (en el 443 también es HTTP simple, sin
+certificado) y comprueba que ya están escuchando.
+
+**Cómo saber que salió bien (VM):** `ss` muestra `python3` en `:80` y en `:443`. **Solo entonces**
+pasa a la Mac: si el servidor no está arriba, el `curl` falla en milisegundos y **parece** un
+problema de firewall sin serlo.
+
+**Dónde:** Mac (antes de que pasen los 2 minutos)
+
+```
+curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 http://160.34.211.158/
+curl -sS -o /dev/null -w '%{http_code}\n' --max-time 10 http://160.34.211.158:443/
+```
+
+**Qué hace:** se conecta desde internet a los dos puertos (al 443 con `http://` porque el
+servidor de prueba no tiene certificado).
+
+**Cómo saber que salió bien:** los dos responden `200`. Si tarda los 10 segundos y falla
+(*timeout*), algo sigue bloqueando: revisa 2.1 y 2.4. Si falla **al instante** con
+*connection refused*, el servidor de prueba ya no estaba arriba: repite la parte de la VM.
+
+Al terminar, los servidores se apagan solos (por el `timeout 120`). Para confirmarlo, en la VM:
+`sudo ss -tlnp | grep -E ':(80|443) '` no muestra nada.
+
+### 2.8 Prueba de reinicio
+
+**Dónde:** VM
+
+```
+sudo reboot
+```
+
+Espera un par de minutos, vuelve a entrar (paso 1.1) y:
+
+```
+sudo iptables -L INPUT -n --line-numbers
+systemctl is-active docker netfilter-persistent
+```
+
+**Qué hace:** comprueba que las reglas se cargan solas desde `rules.v4` al arrancar.
+
+**Cómo saber que salió bien:** `tcp dpt:80` y `tcp dpt:443` siguen apareciendo **antes** del
+`REJECT`, una vez cada una, y los dos servicios dicen `active`.
+
+> ⚠️ **Sin verificar:**
+> - Que este procedimiento sirva igual en **otra** VM (otra imagen u otra versión de Ubuntu
+>   puede traer otras reglas, otra posición del `REJECT` u otro archivo). Repite el diagnóstico
+>   de 2.2 antes de copiar números de línea.
+> - Si nginx **en Docker** necesita estas reglas de INPUT: Docker dirige el tráfico de los puertos
+>   publicados por la tabla `nat`, antes de la cadena INPUT (documentación de Docker). La prueba
+>   de 2.7 usó un servidor **fuera** de Docker, que sí pasa por INPUT. Las reglas se dejan de
+>   todos modos: las necesita cualquier cosa que escuche directo en la VM y dejan claro qué está
+>   permitido.
+
+### 2.9 (Opcional, después del despliegue) Quitar la regla vieja del 8069
+
+La regla del puerto **8069**, en Oracle y en iptables, es un resto del Odoo de otro proyecto.
+Producción no la necesita: Odoo no publica puertos y el túnel del paso 6 usa `127.0.0.1` (la
+interfaz `lo`, que se permite con otra regla). Quitarla es **opcional**; hazlo solo con todo ya
+funcionando (paso 11).
+
+> ⚠️ **Sin verificar:** estos pasos no se han ejecutado en la VM. Están armados con las mismas
+> herramientas que 2.3 a 2.8.
+
+**Oracle — Dónde:** Navegador. En la Security List (2.1), busca la regla de entrada con destino
+`8069`, revisa que sea esa (y no la de 80, 443 o 22) y elimínala.
+**Cómo saber que salió bien:** en Ingress Rules ya no aparece ningún destino `8069`, y siguen las
+de 22, 80 y 443.
+
+**VM — Dónde:** VM
+
+1. Copia de seguridad (como en 2.3):
+   ```
+   sudo cp -a /etc/iptables/rules.v4 /etc/iptables/rules.v4.bak-$(date +%Y%m%d)-sin8069
+   ```
+2. Quitarla en vivo. Busca su número y bórrala por número:
+   ```
+   sudo iptables -L INPUT -n --line-numbers | grep 'dpt:8069'
+   sudo iptables -D INPUT <n>
+   ```
+   **Cómo saber que salió bien:** `sudo iptables -L INPUT -n --line-numbers` ya no muestra
+   `dpt:8069`, y siguen `dpt:22`, `dpt:80`, `dpt:443` y el `REJECT`.
+3. Quitarla del archivo. Busca su número de línea y bórrala por número:
+   ```
+   sudo grep -n -- '--dport 8069' /etc/iptables/rules.v4
+   sudo sed -i '<L>d' /etc/iptables/rules.v4
+   sudo grep -c -- '--dport 8069' /etc/iptables/rules.v4
+   ```
+   (`<L>` es el número que mostró el primer `grep`, sin los dos puntos.)
+   **Cómo saber que salió bien:** el último `grep` responde `0`.
+4. Validar (como en 2.6) y, si quieres, repetir la prueba de reinicio (2.8):
+   ```
+   sudo sh -c 'iptables-restore --test < /etc/iptables/rules.v4' && echo "SINTAXIS OK"
+   ```
 
 ---
 
@@ -1025,12 +1225,16 @@ celular, cierra y vuelve a abrir la app).
 ### 16.2 Certbot dice "Timeout" o el puerto 80 no responde
 
 Un *timeout* casi siempre es firewall. Revisa en orden:
-1. **Navegador:** las reglas de la Security List (paso 2.1).
+1. **Navegador:** las reglas de la Security List (paso 2.1): el puerto va en el rango de
+   **destino**, y el de **origen** debe decir **Todo**.
 2. **VM:** `sudo iptables -L INPUT -n --line-numbers` (paso 2.2): el `ACCEPT` del 80 debe ir
-   antes del `REJECT`.
+   antes del `REJECT`. Si no está después de un reinicio, falta en `/etc/iptables/rules.v4`
+   (pasos 2.5 y 2.6).
 3. **VM:** `docker compose ps` (nginx en `Up` con `0.0.0.0:80->80/tcp`) y `sudo ss -tlnp | grep ':80 '`.
 4. **Mac:** `curl -v http://160.34.211.158/` y `nc -vz 160.34.211.158 80`. *Connection refused*
    (respuesta inmediata) = llega a la VM pero nada escucha; *timeout* = un firewall lo bloquea.
+   Si pruebas con el servidor temporal de 2.7, confirma con `ss` que está **arriba** antes del
+   `curl`: si no, el `curl` falla al instante y parece firewall sin serlo.
 
 ### 16.3 Certbot no reconoce `--ip-address` o `--preferred-profile`
 
@@ -1098,9 +1302,14 @@ servicio). Los respaldos viejos se borran solos (quedan 14).
 
 ## 17. Lo que no está verificado
 
-- **Usuario `ubuntu`** de la VM (paso 0).
-- **Reglas de iptables:** el estado real de la VM y si hacen falta para los puertos de Docker
-  (paso 2.3).
+- **Firewall en otra VM:** el procedimiento de la sección 2 se verificó el 12-oct-2026 en
+  esta VM; en otra puede cambiar (paso 2.8).
+- **Si nginx en Docker necesita las reglas de INPUT** (paso 2.8): la prueba de 2.7 fue con un
+  servidor fuera de Docker.
+- **No usar `netfilter-persistent save`:** es una precaución, no un fallo observado (sección 2).
+- **Quitar la regla del 8069** (paso 2.9): no se ha ejecutado.
+- **Redacción exacta del `sed` (2.5) y de la prueba (2.7):** escrita después de lo hecho en la
+  VM; el `sed` se probó sobre una copia de ejemplo de `rules.v4`.
 - **Versión de Certbot del snap** en ARM64 el día de la instalación (paso 5.1).
 - **Cambiar la IP del mismo certificado** sin borrarlo antes (paso 12).
 - **Clonar un repo privado** con deploy key (paso 3.1).
@@ -1134,7 +1343,8 @@ servicio). Los respaldos viejos se borran solos (quedan 14).
 - Docker, Port publishing (loopback y Docker 28.0.0) — https://docs.docker.com/engine/network/port-publishing/
 - Oracle, Best practices for Compute (no usar UFW en Ubuntu) —
   https://docs.oracle.com/en-us/iaas/Content/Compute/References/bestpracticescompute.htm
-- Oracle, tutorial Apache en Ubuntu (iptables + `netfilter-persistent save`) —
+- Oracle, tutorial Apache en Ubuntu (iptables + `netfilter-persistent save`; esta guía **no**
+  usa `netfilter-persistent save`, ver sección 2) —
   https://docs.oracle.com/en-us/iaas/developer-tutorials/tutorials/apache-on-ubuntu/01oci-ubuntu-apache-summary.htm
 - Oracle, Public IP Addresses (efímera vs. reservada) —
   https://docs.oracle.com/en-us/iaas/Content/Network/Tasks/managingpublicIPs.htm
