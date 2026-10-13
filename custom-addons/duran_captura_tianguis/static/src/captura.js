@@ -2525,4 +2525,15 @@
     window.addEventListener("resize", medirBarra);
     history.replaceState(fotoHistorial(), "");
     dibujar();
+
+    // App instalable: el service worker solo pasa cada petición a la red. En
+    // http:// (la WiFi) no existe navigator.serviceWorker y no se registra; si
+    // el registro falla, la pantalla sigue igual.
+    if ("serviceWorker" in navigator) {
+        try {
+            navigator.serviceWorker.register("/captura/sw.js", { scope: "/captura" }).catch(() => {});
+        } catch (_error) {
+            // Sin service worker la pantalla funciona igual.
+        }
+    }
 })();

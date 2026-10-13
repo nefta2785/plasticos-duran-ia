@@ -10,6 +10,10 @@
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
         <meta name="theme-color" content="#0b3d91"/>
         <title>Captura tianguis</title>
+        <!-- Instalable como app en la pantalla de inicio del celular. -->
+        <link rel="manifest" t-attf-href="/duran_captura_tianguis/static/captura.webmanifest?v=#{version}"/>
+        <link rel="icon" type="image/png" sizes="192x192" href="/duran_captura_tianguis/static/img/icono-192.png"/>
+        <link rel="apple-touch-icon" href="/duran_captura_tianguis/static/img/icono-192.png"/>
         <link rel="stylesheet" t-attf-href="/duran_captura_tianguis/static/src/captura.css?v=#{version}"/>
         <script t-attf-src="/duran_captura_tianguis/static/src/captura.js?v=#{version}" defer="defer"></script>
     </head>

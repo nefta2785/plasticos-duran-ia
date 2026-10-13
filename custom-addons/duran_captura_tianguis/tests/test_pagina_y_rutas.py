@@ -1,5 +1,7 @@
 """ Pasos 2 a 4: la página /captura y las rutas de lectura (zonas, clientes, catálogo). """
+import json
 import re
+import struct
 
 from odoo import Command
 from odoo.tests import HttpCase, tagged
@@ -60,6 +62,60 @@ class TestPaginaYRutas(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
                 if extension == "js":
                     for ruta in RUTAS_API:
                         self.assertIn(ruta, response.text)
+
+    # === App instalable: manifiesto, íconos y service worker === #
+
+    def test_pagina_enlaza_manifiesto_e_iconos(self):
+        self._entrar(self.usuario_captura)
+        pagina = self.url_open("/captura").text
+        self.assertRegex(
+            pagina, r'<link rel="manifest" href="/duran_captura_tianguis/static/captura\.webmanifest\?v=\d+"',
+        )
+        self.assertIn('rel="icon"', pagina)
+        self.assertIn('rel="apple-touch-icon"', pagina)
+        self.assertIn("/captura/sw.js", self.url_open("/duran_captura_tianguis/static/src/captura.js").text)
+
+    def test_manifiesto_e_iconos_sin_sesion(self):
+        """ Chrome descarga el manifiesto sin cookies: debe ser público. """
+        self._entrar(self.usuario_captura)
+        ruta_manifiesto = re.search(r'rel="manifest" href="([^"]+)"', self.url_open("/captura").text).group(1)
+        self.authenticate(None, None)
+        response = self.url_open(ruta_manifiesto, allow_redirects=False)
+        self.assertEqual(response.status_code, 200)
+        manifiesto = json.loads(response.text)
+        self.assertEqual(
+            {campo: manifiesto[campo] for campo in (
+                "name", "short_name", "start_url", "scope", "display", "theme_color", "background_color",
+            )},
+            {
+                "name": "Captura tianguis", "short_name": "Captura", "start_url": "/captura",
+                "scope": "/captura", "display": "standalone",
+                "theme_color": "#0b3d91", "background_color": "#0b3d91",
+            },
+        )
+        self.assertEqual(
+            {(icono["sizes"], icono["purpose"]) for icono in manifiesto["icons"]},
+            {("192x192", "any"), ("512x512", "any"), ("512x512", "maskable")},
+        )
+        for icono in manifiesto["icons"]:
+            with self.subTest(icono=icono["src"]):
+                response = self.url_open(icono["src"], allow_redirects=False)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["Content-Type"], "image/png")
+                ancho, alto = struct.unpack(">II", response.content[16:24])  # cabecera IHDR del PNG
+                self.assertEqual(f"{ancho}x{alto}", icono["sizes"])
+
+    def test_service_worker_sin_sesion_y_sin_cache(self):
+        self.authenticate(None, None)
+        response = self.url_open("/captura/sw.js", allow_redirects=False)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("javascript", response.headers["Content-Type"])
+        # Su alcance máximo sería /captura/ (con diagonal), que no cubre la página /captura.
+        self.assertEqual(response.headers["Service-Worker-Allowed"], "/captura")
+        self.assertIn('addEventListener("fetch"', response.text)
+        self.assertIn("fetch(event.request)", response.text)
+        for cache in ("caches", "Cache", ".put(", "addAll(", "match("):
+            self.assertNotIn(cache, response.text)
 
     # === Zonas y clientes === #
 

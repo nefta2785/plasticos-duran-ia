@@ -6,13 +6,14 @@ from odoo import _, http
 from odoo.addons.web.controllers.home import Home
 from odoo.exceptions import AccessError
 from odoo.http import request
-from odoo.tools.misc import file_path
+from odoo.tools.misc import file_open, file_path
 
 GRUPO_CAPTURA = "duran_captura_tianguis.group_captura_tianguis"
 GRUPO_GERENTE_VENTAS = "sales_team.group_sale_manager"
 ARCHIVOS_ESTATICOS = (
     "duran_captura_tianguis/static/src/captura.css",
     "duran_captura_tianguis/static/src/captura.js",
+    "duran_captura_tianguis/static/captura.webmanifest",
 )
 
 
@@ -69,6 +70,18 @@ class CapturaTianguis(http.Controller):
             # El usuario de tianguis no ve "Salir": no sale a Odoo ni cierra sesión.
             "puede_salir": not es_usuario_tianguis(request.env.user),
         })
+
+    @http.route("/captura/sw.js", type="http", auth="public", methods=["GET"], readonly=True)
+    def service_worker(self):
+        """ Service worker de la app instalable (no guarda nada). Desde
+        /captura/sw.js su alcance máximo sería /captura/ (con diagonal), que no
+        cubre la página /captura: Service-Worker-Allowed lo amplía a /captura. """
+        with file_open("duran_captura_tianguis/static/src/captura_sw.js") as archivo:
+            contenido = archivo.read()
+        return request.make_response(contenido, [
+            ("Content-Type", "text/javascript"),
+            ("Service-Worker-Allowed", "/captura"),
+        ])
 
     @http.route("/captura/api/zonas", type="jsonrpc", auth="user", methods=["POST"])
     def api_zonas(self):
