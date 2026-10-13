@@ -999,6 +999,12 @@ ls -lR /var/backups/duran | head -20
 
 **Qué hace:** corre el respaldo una vez para comprobar que funciona.
 
+**Nota:** el script usa `sudo -n docker compose` por dentro, porque `ubuntu` no está en el grupo
+`docker` (y no se agrega: estar en ese grupo equivale a ser root). Por eso necesita sudo **sin
+contraseña** (`sudo -n true` no debe pedir nada; en la VM así está). Si sudo pidiera contraseña,
+el script falla de inmediato con `sudo: a password is required` en vez de quedarse esperando, y
+no deja un respaldo a medias.
+
 **Cómo saber que salió bien:** termina con "Respaldo listo: /var/backups/duran/AAAAMMDD-HHMMSS"
 y esa carpeta tiene `duranPROD.dump` y `filestore.tar.gz`, los dos con tamaño mayor a 0.
 
@@ -1016,6 +1022,11 @@ horaria de la VM.
 
 **Antes:** el paso 13.1 debe estar hecho. El cron escribe `respaldo.log` en
 `/var/backups/duran`; si la carpeta no existe o no es de `ubuntu`, la tarea falla sin respaldo.
+
+**Nota:** como en 13.2, el script llama a `sudo -n docker compose` porque `ubuntu` no está en el
+grupo `docker`; bajo cron también depende de que sudo no pida contraseña. ⚠️ **Sin verificar:** no
+se ha comprobado cómo se comporta sudo cuando lo ejecuta cron (sin terminal). Si falla, el error
+queda en `respaldo.log`; revísalo después de la primera noche.
 
 **Cómo saber que salió bien:** la zona es `Etc/UTC` (si es otra, ajusta la hora en
 `/etc/cron.d/duran-respaldo`). Al día siguiente:
@@ -1169,11 +1180,15 @@ los pasos 1 a 5:
 
 ```
 cd /home/ubuntu/plasticos-duran-ia
-docker/prod/scripts/restaurar.sh /var/backups/duran/<AAAAMMDD-HHMMSS> duranPROD
+sudo docker/prod/scripts/restaurar.sh /var/backups/duran/<AAAAMMDD-HHMMSS> duranPROD
 ```
 
 y luego los pasos 7, 8 (si cambió la IP) y 11. Si la base duranPROD vieja todavía existe,
 `restaurar.sh` se niega: no se borra nada sin decidirlo antes con calma.
+
+`restaurar.sh` llama a `docker compose` sin sudo (así sirve también para el ensayo en la Mac,
+14.3); en la VM `ubuntu` no está en el grupo `docker`, por eso el script completo se corre con
+`sudo`.
 
 ---
 

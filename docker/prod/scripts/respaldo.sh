@@ -32,8 +32,10 @@ if ! [[ "$DESTINO" =~ ^/var/backups/[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za
 fi
 DESTINO="${DESTINO%/}"
 
+# ubuntu no está en el grupo docker: se usa sudo. -n hace que falle de inmediato
+# (sin quedarse esperando contraseña) si sudo llegara a pedirla, p. ej. bajo cron.
 compose() {
-    docker compose --project-directory "$DIR_PROD" -f "$DIR_PROD/docker-compose.yml" "$@"
+    sudo -n docker compose --project-directory "$DIR_PROD" -f "$DIR_PROD/docker-compose.yml" "$@"
 }
 
 umask 077
