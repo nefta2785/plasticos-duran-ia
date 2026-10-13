@@ -1,0 +1,11 @@
+# Respaldo diario de duranPROD. Se instala en la VM como /etc/cron.d/duran-respaldo
+# (dueño root, permisos 644; ver docs/guia-despliegue.md).
+#
+# La VM usa UTC: 09:30 UTC = 03:30 en el centro de México (UTC-6, sin horario de verano).
+# Corre como el usuario ubuntu (debe estar en el grupo docker) para que la Mac
+# pueda copiar los respaldos con ese mismo usuario.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+30 9 * * * ubuntu /home/ubuntu/plasticos-duran-ia/docker/prod/scripts/respaldo.sh >> /var/backups/duran/respaldo.log 2>&1

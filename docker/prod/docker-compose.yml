@@ -1,0 +1,111 @@
+# Producción de Plásticos Durán: VM de Oracle (Ubuntu 22.04, ARM64).
+# Paso a paso en docs/guia-despliegue.md.
+#
+# Uso (desde esta carpeta docker/prod/, para que se lea el .env de al lado):
+#   cp .env.example .env            # y rellena los valores reales
+#   cp odoo.conf.example odoo.conf  # y pon el hash de la Master Password
+#   docker compose up -d
+#
+# Solo nginx publica puertos (80 y 443). Odoo y PostgreSQL viven en las redes
+# internas de Docker; para crear la base se usa docker-compose.tunel.yml.
+
+name: duran-prod
+
+x-logging: &logging
+  # Sin esto, los logs de Docker crecen sin límite y pueden llenar el disco.
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    # PostgreSQL 15.19 (Debian 15.19-1.pgdg13+2): la misma imagen probada en DEV.
+    # Fijada por digest: la etiqueta 15.19 de Docker Hub ya apunta a otra
+    # reconstrucción. El digest es multiplataforma (incluye linux/arm64/v8).
+    image: postgres@sha256:9b1d34adbce1dd07ee6e94b4a2cf698884b89bd44a6c9c12f5da8f3acbfe4957
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Define POSTGRES_USER en docker/prod/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en docker/prod/.env}
+      POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - db-data:/var/lib/postgresql/data/pgdata
+    networks:
+      - interna
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging: *logging
+
+  odoo:
+    # Odoo Server 19.0-20260908 (Community): la misma imagen probada en DEV.
+    # Fijada por digest: la etiqueta 19.0-20260908 de Docker Hub ya apunta a otra
+    # reconstrucción. El digest es multiplataforma (incluye linux/arm64/v8).
+    image: odoo@sha256:c716703f64af06c191c00669f5904b6dbaa2e6ec1a731a584ec27fa7ea935ece
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # La imagen de Odoo espera HOST/PORT/USER/PASSWORD (no las POSTGRES_*).
+      HOST: db
+      PORT: "5432"
+      USER: ${POSTGRES_USER:?Define POSTGRES_USER en docker/prod/.env}
+      PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en docker/prod/.env}
+    volumes:
+      - odoo-data:/var/lib/odoo   # filestore + sesiones
+      - type: bind
+        source: ../../custom-addons
+        target: /mnt/extra-addons
+        read_only: true
+      # Sintaxis larga: si odoo.conf no existe, Docker da error en lugar de
+      # crear una carpeta vacía con ese nombre.
+      - type: bind
+        source: ./odoo.conf
+        target: /etc/odoo/odoo.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - interna
+      - web
+    restart: unless-stopped
+    logging: *logging
+
+  nginx:
+    # nginx 1.30.5 (rama estable). Digest multiplataforma (incluye linux/arm64/v8).
+    image: nginx@sha256:9bf97bd7714f5e24c1ccd545ecb9eb5435cb6d109c97cebb15e7e455e0239edb
+    depends_on:
+      - odoo
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # NGINX_CONF=http (solo puerto 80, antes del certificado) o https (completo).
+      - type: bind
+        source: ./nginx/${NGINX_CONF:?Define NGINX_CONF (http o https) en docker/prod/.env}.conf
+        target: /etc/nginx/conf.d/default.conf
+        read_only: true
+        bind:
+          create_host_path: false
+      # Certbot (snap, en el host) deja aquí los certificados y el reto HTTP-01.
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    networks:
+      - web
+    restart: unless-stopped
+    logging: *logging
+
+networks:
+  # db y odoo. Sin salida a internet ni entrada desde nginx.
+  interna:
+    internal: true
+  # nginx y odoo.
+  web: {}
+
+volumes:
+  db-data:
+  odoo-data:

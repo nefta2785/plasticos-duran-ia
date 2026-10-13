@@ -1,0 +1,35 @@
+; Configuración de Odoo 19 para producción.
+; Copia este archivo como odoo.conf en esta misma carpeta (docker/prod/odoo.conf,
+; que NO se versiona) y sigue docs/guia-despliegue.md.
+; Los datos de conexión a PostgreSQL llegan por variables de entorno (.env).
+
+[options]
+addons_path = /mnt/extra-addons
+data_dir = /var/lib/odoo
+
+; Master Password del gestor de bases, SIEMPRE como hash ($pbkdf2-sha512$...).
+; Vacío = nadie puede usar el gestor (verificado en Odoo 19). OJO: un texto
+; cualquiera que no sea hash, Odoo lo acepta como contraseña en texto plano.
+admin_passwd =
+
+; Detrás de nginx: Odoo toma el esquema (https), el host y la IP real de los
+; encabezados X-Forwarded-* que manda nginx.
+proxy_mode = True
+
+; Solo la base duranPROD. list_db = False apaga el gestor de bases (crear,
+; borrar, respaldar, restaurar), también por XML-RPC. Se pone en True SOLO
+; mientras se crea la base por el túnel SSH (paso 6 de la guía).
+dbfilter = ^duranPROD$
+list_db = False
+
+; Workers: (#CPU * 2) + 1 = 5 para 2 núcleos (documentación de Odoo).
+; RAM estimada: 5 * (0.8 * 150 MB + 0.2 * 1024 MB) ~= 1.6 GB.
+workers = 5
+max_cron_threads = 1
+
+; Límites del ejemplo de la documentación de Odoo (por worker).
+limit_memory_soft = 629145600
+limit_memory_hard = 1677721600
+limit_request = 8192
+limit_time_cpu = 600
+limit_time_real = 1200

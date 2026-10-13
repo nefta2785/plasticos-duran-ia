@@ -1,0 +1,12 @@
+# SOLO para crear duranPROD por túnel SSH (paso 6 de docs/guia-despliegue.md).
+#
+# Publica Odoo únicamente en el loopback de la VM (127.0.0.1:8069): desde
+# internet no se alcanza; desde la Mac se llega con `ssh -L`. En cuanto la base
+# exista, se vuelve a levantar Odoo SIN este archivo para quitar el puerto.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.tunel.yml up -d odoo
+
+services:
+  odoo:
+    ports:
+      - "127.0.0.1:8069:8069"
