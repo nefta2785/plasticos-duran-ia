@@ -3,8 +3,11 @@
 #
 # Uso:  restaurar.sh <carpeta-del-respaldo> <base-destino>
 #
-# - La base destino no debe existir (el script nunca borra ni sobrescribe).
-# - Nunca restaura sobre duranDEV.
+# - Nunca sobrescribe: si ya existe la base destino O su filestore
+#   (/var/lib/odoo/filestore/<base-destino>), se detiene sin tocar nada.
+#   Tampoco borra nada.
+# - Nunca restaura sobre duranDEV. duranPROD sí se acepta, pero solo si NO
+#   existe (restauración por desastre en un stack limpio; guía, paso 14.8).
 # - Usa el docker compose de COMPOSE_DIR (por defecto docker/prod). Para el
 #   ensayo en la Mac: COMPOSE_DIR=docker (el de desarrollo); ver la guía.
 # - El filestore se copia a /var/lib/odoo/filestore/<base-destino>: Odoo lo
@@ -13,6 +16,7 @@ set -euo pipefail
 
 if [ $# -ne 2 ]; then
     echo "Uso: $0 <carpeta-del-respaldo> <base-destino>" >&2
+    echo "Restaura en una base NUEVA: si la base o su filestore ya existen, no sobrescribe nada y se detiene." >&2
     exit 2
 fi
 RESPALDO="$(cd "$1" && pwd)"
@@ -40,11 +44,11 @@ compose() {
 
 existe="$(compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -Atc "SELECT 1 FROM pg_database WHERE datname = '"'"'$1'"'"'"' _ "$DESTINO")"
 if [ "$existe" = "1" ]; then
-    echo "ERROR: la base $DESTINO ya existe; elige otro nombre." >&2
+    echo "ERROR: la base $DESTINO ya existe; no se sobrescribe ni se toca. Elige otro nombre." >&2
     exit 1
 fi
 if compose exec -T odoo test -e "/var/lib/odoo/filestore/$DESTINO"; then
-    echo "ERROR: ya existe el filestore de $DESTINO; elige otro nombre." >&2
+    echo "ERROR: ya existe el filestore de $DESTINO (/var/lib/odoo/filestore/$DESTINO); no se sobrescribe ni se toca. Elige otro nombre." >&2
     exit 1
 fi
 

@@ -11,7 +11,9 @@ en la VM de Oracle, con HTTPS por IP, y cómo operarla después.
 > - **Cómo saber que salió bien.**
 >
 > Los pasos marcados con ⚠️ **Sin verificar** no están confirmados en documentación oficial:
-> hazlos con calma y revisa el resultado antes de seguir.
+> hazlos con calma y revisa el resultado antes de seguir. (⚠️ se usa **solo** para eso.)
+>
+> 🚫 marca algo que **no** se debe hacer.
 >
 > **Nunca** pegues contraseñas, el contenido de `.env` ni el de `odoo.conf` en un chat, un
 > issue o un commit.
@@ -165,7 +167,7 @@ sudo iptables -L INPUT -n --line-numbers
 **Cómo saber qué tienes:** busca una línea `REJECT ... reject-with icmp-host-prohibited`. Si
 existe, todo lo que no esté permitido **antes** de esa línea se rechaza. Anota su número.
 
-> ⚠️ **No uses `ufw`** en esta VM: Oracle advierte que editar reglas con UFW en sus imágenes de
+> 🚫 **No uses `ufw`** en esta VM: Oracle advierte que editar reglas con UFW en sus imágenes de
 > Ubuntu puede dejar la instancia sin arrancar.
 
 ### 2.3 Abrir 80 y 443 en iptables
@@ -730,6 +732,11 @@ Abre `https://160.34.211.158/captura`, inicia sesión y en el menú ⋮ elige **
 **Cómo saber que salió bien:** aparece el ícono azul con la "D" en la pantalla de inicio y la app
 abre sin barra de direcciones.
 
+> ⚠️ **Sin verificar:** que Chrome en Android ofrezca "Instalar app" con este certificado y esta
+> configuración solo se puede comprobar en el celular. Si no aparece la opción, la alternativa
+> es la opción del menú ⋮ para agregar la página a la pantalla de inicio (abre como pestaña de
+> Chrome, no como app).
+
 ---
 
 ## 12. Qué hacer si cambia la IP
@@ -806,6 +813,9 @@ timedatectl | grep 'Time zone'
 
 **Qué hace:** instala la tarea diaria (corre como `ubuntu` a las 09:30 UTC) y muestra la zona
 horaria de la VM.
+
+**Antes:** el paso 13.1 debe estar hecho. El cron escribe `respaldo.log` en
+`/var/backups/duran`; si la carpeta no existe o no es de `ubuntu`, la tarea falla sin respaldo.
 
 **Cómo saber que salió bien:** la zona es `Etc/UTC` (si es otra, ajusta la hora en
 `/etc/cron.d/duran-respaldo`). Al día siguiente:
@@ -954,7 +964,7 @@ Anota la fecha del ensayo y el respaldo usado. Repítelo cada vez que cambie alg
 
 ### 14.8 Restaurar de verdad en producción (desastre)
 
-⚠️ **Sin ensayar todavía.** En una VM nueva (o un stack limpio, sin base duranPROD), después de
+⚠️ **Sin verificar:** no se ha ensayado todavía. En una VM nueva (o un stack limpio, sin base duranPROD), después de
 los pasos 1 a 5:
 
 ```
