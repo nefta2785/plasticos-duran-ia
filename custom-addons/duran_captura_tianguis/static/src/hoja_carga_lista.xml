@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!-- Hoja de carga: el pie es una sola fila "Productos totales: N" bajo la
+         columna Producto (hoja_carga_lista.js). -->
+    <t t-name="duran_captura_tianguis.HojaCargaRenderer" t-inherit="web.ListRenderer" t-inherit-mode="primary">
+        <xpath expr="//tfoot" position="replace">
+            <tfoot class="o_list_footer o_hoja_carga_pie cursor-default">
+                <tr>
+                    <td t-if="hasSelectors"/>
+                    <td t-att-colspan="columns.length" class="fw-bold">
+                        Productos totales: <t t-esc="productosTotales"/>
+                    </td>
+                    <td t-if="hasOpenFormViewColumn" class="w-print-0 p-print-0"/>
+                    <td t-if="displayOptionalFields or activeActions.onDelete" class="w-print-0 p-print-0"/>
+                </tr>
+            </tfoot>
+        </xpath>
+    </t>
+
+</templates>

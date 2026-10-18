@@ -5,14 +5,15 @@
          entregar (vista SQL duran.hoja.carga) y la marca de "Acomodado" de hoy.
          Verde: lo marcado alcanza para lo pendiente; naranja: se agregó más
          de lo marcado.
-         Abre con las zonas abiertas (expand) y se recarga sola
-         (js_class duran_lista_recarga, static/src/lista_recarga.js). Pensada
+         Abre con las zonas abiertas (expand), se recarga sola y al pie lleva
+         "Productos totales: N" (js_class duran_hoja_carga_lista,
+         static/src/hoja_carga_lista.js, sobre lista_recarga.js). Pensada
          para caber en 393 px: la zona va solo en el encabezado del grupo. -->
     <record id="hoja_carga_view_list" model="ir.ui.view">
         <field name="name">duran.hoja.carga.list</field>
         <field name="model">duran.hoja.carga</field>
         <field name="arch" type="xml">
-            <list string="Hoja de carga" class="o_hoja_carga" js_class="duran_lista_recarga" expand="1"
+            <list string="Hoja de carga" class="o_hoja_carga" js_class="duran_hoja_carga_lista" expand="1"
                   create="false" edit="false" delete="false"
                   decoration-success="estado == 'acomodado'"
                   decoration-warning="estado == 'agregado'">
@@ -24,6 +25,9 @@
                 <field name="total" column_invisible="True"/>
                 <field name="cantidad_texto" width="52px"/>
                 <field name="aviso" width="88px"/>
+                <!-- Oculto: solo para el pie "Productos totales: N" (hoja_carga_lista.js),
+                     que suma los totales de cada zona (aggregator="sum" en el modelo). -->
+                <field name="productos_totales" column_invisible="True"/>
                 <!-- Cuadro de marcar: ☐ marca con lo que se veía en pantalla, ☑ quita
                      la marca. El texto queda como nombre accesible (oculto con CSS). -->
                 <button name="action_acomodado" type="object" string="Acomodado" title="Acomodado"

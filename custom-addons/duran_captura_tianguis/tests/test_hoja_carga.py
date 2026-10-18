@@ -233,6 +233,25 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
             {(self.kilo, 2.5, self.env.ref("uom.product_uom_kgm")), (self.rollo, 3.0, self.env.ref("uom.product_uom_unit"))},
         )
 
+    def test_productos_totales_por_zona(self):
+        """ "Productos totales" de cada zona = suma de los totales de sus
+        renglones; kg y piezas valen 1, estén marcados o no. "Sin zona"
+        también tiene el suyo. El pie "Productos totales: N" suma estos totales
+        de zona, abiertas o cerradas (hoja_carga_lista.js). """
+        self._pedido([(self.kilo, 3), (self.pieza, 2), (self.rollo, 1)])
+        self._pedido([(self.pieza, 4)], cliente=self.cliente_b, zona=self.zona_b)
+        sin_zona = self._cliente("Cliente sin zona hoja", self.env["res.partner.category"])
+        self._pedido([(self.kilo, 5)], cliente=sin_zona, zona=False)
+        self._acomodado(self.pieza)
+        productos = self.kilo | self.pieza | self.rollo
+        self._renglones(productos)  # flush
+        grupos = self.env["duran.hoja.carga"].with_user(self.papa)._read_group(
+            [("product_id", "in", productos.ids)], ["zona_id"], ["productos_totales:sum", "total:sum"],
+        )
+        totales = {zona.id: (productos_totales, total) for zona, productos_totales, total in grupos}
+        self.assertEqual(totales, {self.zona.id: (6.0, 6.0), self.zona_b.id: (4.0, 4.0), False: (5.0, 5.0)})
+        self.assertEqual(sum(productos_totales for productos_totales, _total in totales.values()), 15.0)
+
     # === Marcas === #
 
     def test_marcar_y_marcar_dos_veces(self):
@@ -578,15 +597,22 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         # en una sola columna: cabe en el celular. `total` va oculto (botón).
         self.assertEqual(columnas, ["product_id", "cantidad_texto", "aviso"])
         self.assertEqual(arch.xpath("//field[@name='total']/@column_invisible"), ["True"])
+        # "Productos totales" va oculto: solo para el pie (hoja_carga_lista.js).
+        self.assertEqual(arch.xpath("//field[@name='productos_totales']/@column_invisible"), ["True"])
         # Zonas abiertas al entrar, recarga automática y piezas sin decimales.
         self.assertEqual(
-            (arch.get("expand"), arch.get("js_class"), arch.get("class")), ("1", "duran_lista_recarga", "o_hoja_carga"),
+            (arch.get("expand"), arch.get("js_class"), arch.get("class")), ("1", "duran_hoja_carga_lista", "o_hoja_carga"),
         )
-        self.assertFalse(arch.xpath("//field[@sum]"), "sin suma en el pie: mezclaría kg con piezas")
+        # Sin suma nativa al pie: el pie propio es "Productos totales: N".
+        self.assertFalse(arch.xpath("//field[@sum]"))
         self.assertEqual(
-            {c: self.env["duran.hoja.carga"].fields_get([c], ["aggregator"])[c].get("aggregator") for c in ("total",)},
-            {"total": None},
+            {c: self.env["duran.hoja.carga"].fields_get([c], ["aggregator"])[c].get("aggregator")
+             for c in ("total", "productos_totales")},
+            {"total": None, "productos_totales": "sum"},
         )
+        # Sin decimales en el encabezado ("12", no "12,00").
+        digitos = self.env["duran.hoja.carga"].fields_get(["productos_totales"], ["digits"])["productos_totales"]["digits"]
+        self.assertEqual(list(digitos), [16, 0])
         self.assertEqual(
             {d: arch.get(d) for d in ("decoration-success", "decoration-warning", "decoration-info")},
             {

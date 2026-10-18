@@ -67,6 +67,10 @@ class DuranHojaCarga(models.Model):
     # Total y unidad en una columna ("4 pz", "2,5 kg"), para que la lista
     # quepa en el celular.
     cantidad_texto = fields.Char(string="Cantidad", compute="_compute_cantidad_texto")
+    # Lo mismo que `total`, pero con suma: el total de cada zona en el
+    # encabezado del grupo (kg y piezas valen 1). Sin decimales: no se vende
+    # en fracciones. En los renglones no se ve (hoja_carga.css).
+    productos_totales = fields.Float(string="Productos totales", digits=(16, 0), readonly=True, aggregator="sum")
 
     def init(self):
         tools.drop_view_if_exists(self.env.cr, self._table)
@@ -106,7 +110,7 @@ class DuranHojaCarga(models.Model):
                 HAVING ROUND(SUM(p.product_qty)::numeric, par.digitos) > 0
             )
             SELECT t.product_id::bigint * 1000000 + COALESCE(t.zona_id, 0) AS id,
-                   t.zona_id, t.product_id, t.total, pt.uom_id AS unidad_producto_id,
+                   t.zona_id, t.product_id, t.total, t.total AS productos_totales, pt.uom_id AS unidad_producto_id,
                    m.cantidad AS cantidad_marcada,
                    -- Verde si lo marcado alcanza para lo pendiente (total igual o menor);
                    -- naranja solo si el total pasó de lo marcado. La marca solo cuenta si
