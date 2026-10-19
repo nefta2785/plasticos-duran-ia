@@ -28,8 +28,13 @@ class StockMove(models.Model):
 
     @api.constrains("product_uom_qty", "quantity", "product_id")
     def _check_peso_variable_qty_max_1(self):
+        """ En las entregas al cliente cada movimiento de un rollo es 1 rollo
+        (la orden de venta ya separa una línea por rollo). Solo aplica a
+        salidas hacia el cliente: recepciones de compra, ajustes de
+        inventario, transferencias internas y devoluciones a proveedor sí
+        pueden mover varios rollos en un mismo movimiento. """
         for move in self:
-            if not move.es_peso_variable:
+            if not move.es_peso_variable or move.location_dest_usage != "customer":
                 continue
             rounding = move.product_uom.rounding
             if (
@@ -37,8 +42,8 @@ class StockMove(models.Model):
                 or float_compare(move.quantity, 1.0, precision_rounding=rounding) > 0
             ):
                 raise ValidationError(_(
-                    'El producto "%(product)s" es de peso variable: cada línea de la entrega '
-                    "representa 1 rollo y no puede tener una cantidad mayor a 1. "
+                    'El producto "%(product)s" es de peso variable: en una entrega al cliente '
+                    "cada línea representa 1 rollo y no puede tener una cantidad mayor a 1. "
                     "Corrige la cantidad desde la Orden de Venta, no desde la Entrega.",
                     product=move.product_id.display_name,
                 ))

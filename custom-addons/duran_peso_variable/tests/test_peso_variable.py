@@ -1,4 +1,5 @@
 """ Comportamiento base del peso variable: un rollo por línea y factura por peso real. """
+from odoo import Command
 from odoo.exceptions import ValidationError
 from odoo.tests import TransactionCase, tagged
 
@@ -43,3 +44,79 @@ class TestPesoVariable(PesoVariableDatosPrueba, TransactionCase):
         asistente.product_return_moves.quantity = 1
         devolucion = asistente._create_return()
         self.assertEqual(devolucion.move_ids.peso_real, 0.0)
+
+
+@tagged("post_install", "-at_install")
+class TestPesoVariableFueraDeEntregas(PesoVariableDatosPrueba, TransactionCase):
+    """ La regla de 1 rollo por movimiento solo aplica a las entregas al
+    cliente: los demás movimientos de rollos pueden llevar varios. """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._crear_datos()
+        cls.proveedor = cls.env["res.partner"].create({"name": "Proveedor prueba peso variable"})
+        cls.almacen = cls.env["stock.warehouse"].search([("company_id", "=", cls.env.company.id)], limit=1)
+        # Los ajustes de inventario y las transferencias internas necesitan
+        # un rollo con control de existencias.
+        cls.rollo_almacenable = cls.env["product.template"].create({
+            "name": "Rollo almacenable prueba peso variable", "es_peso_variable": True,
+            "precio_por_kg": 50.0, "is_storable": True,
+        }).product_variant_id
+
+    def _validar(self, picking, cantidad):
+        picking.move_ids.write({"quantity": cantidad, "picked": True})
+        self.assertIs(picking.button_validate(), True)
+        self.assertEqual(picking.state, "done")
+
+    def _recibir_compra(self, cantidad):
+        if "purchase.order" not in self.env:
+            self.skipTest("El módulo purchase no está instalado en esta base.")
+        compra = self.env["purchase.order"].create({
+            "partner_id": self.proveedor.id,
+            "order_line": [Command.create({"product_id": self.rollo.id, "product_qty": cantidad})],
+        })
+        compra.button_confirm()
+        recepcion = compra.picking_ids
+        self.assertEqual(len(recepcion), 1)
+        self.assertEqual(recepcion.move_ids.product_uom_qty, cantidad)
+        self._validar(recepcion, cantidad)
+        return recepcion
+
+    def test_compra_de_2_rollos(self):
+        self._recibir_compra(2)
+
+    def test_ajuste_de_inventario_de_3_rollos(self):
+        ubicacion = self.almacen.lot_stock_id
+        self.env["stock.quant"].with_context(inventory_mode=True).create({
+            "product_id": self.rollo_almacenable.id, "location_id": ubicacion.id, "inventory_quantity": 3,
+        }).action_apply_inventory()
+        self.assertEqual(self.env["stock.quant"]._get_available_quantity(self.rollo_almacenable, ubicacion), 3)
+
+    def test_transferencia_interna_de_2_rollos(self):
+        origen = self.almacen.lot_stock_id
+        destino = self.env["stock.location"].create({"name": "Anaquel prueba", "location_id": origen.id})
+        self.env["stock.quant"]._update_available_quantity(self.rollo_almacenable, origen, 2)
+        transferencia = self.env["stock.picking"].create({
+            "picking_type_id": self.almacen.int_type_id.id,
+            "location_id": origen.id,
+            "location_dest_id": destino.id,
+            "move_ids": [Command.create({
+                "product_id": self.rollo_almacenable.id, "product_uom_qty": 2,
+                "location_id": origen.id, "location_dest_id": destino.id,
+            })],
+        })
+        transferencia.action_confirm()
+        transferencia.action_assign()
+        self._validar(transferencia, 2)
+        self.assertEqual(self.env["stock.quant"]._get_available_quantity(self.rollo_almacenable, destino), 2)
+
+    def test_devolucion_a_proveedor_de_2_rollos(self):
+        recepcion = self._recibir_compra(2)
+        asistente = self.env["stock.return.picking"].with_context(
+            active_id=recepcion.id, active_model="stock.picking",
+        ).create({})
+        asistente.product_return_moves.quantity = 2
+        devolucion = asistente._create_return()
+        self.assertEqual(devolucion.location_dest_id.usage, "supplier")
+        self._validar(devolucion, 2)
