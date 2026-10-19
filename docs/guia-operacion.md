@@ -162,17 +162,22 @@ usar la app en ese celular, le pedirá la contraseña nueva.
 
 En **Ventas › Órdenes › Hoja de carga** sale todo lo que falta entregar, **agrupado por zona**
 (las zonas ya vienen abiertas): un renglón por producto con su cantidad ("4 pz" son piezas,
-"2,5 kg" kilos). Solo la ven el papá y el administrador. Al ir acomodando, toquen el **cuadro**
-de cada producto:
+"2,5 kg" kilos). Solo la ven el papá y el administrador. Cada producto tiene un **botón**; al ir
+acomodando, tóquenlo:
 
-- **☐ (cuadro vacío)**: toquen para marcarlo como acomodado.
-- **Verde, ☑ (cuadro palomeado)**: acomodado; lo que marcaron alcanza para lo pendiente (el
+- **Botón gris "Acomodar"**: todavía no está marcado. Tóquenlo cuando lo acomoden.
+- **Verde, botón "Acomodado"**: acomodado; lo que marcaron alcanza para lo pendiente (el
   total es igual o menor que lo marcado, por ejemplo porque se canceló un pedido o ya se
-  entregó una parte). Para desmarcarlo, toquen el cuadro palomeado.
-- **Naranja** ("Se agregó 1", "Se agregaron 3"): después de marcarlo entraron pedidos de ese
-  producto en esa zona. Acomoden lo nuevo y toquen otra vez el cuadro.
+  entregó una parte). Si tocan "Acomodado", **se quita la marca** (no pregunta) y vuelve a
+  "Acomodar".
+- **Naranja, botón "Por acomodar"**: después de marcarlo entraron más pedidos de ese producto en
+  esa zona; en la columna Aviso dice cuánto ("Se agregó 1", "Se agregaron 3"). Acomoden lo nuevo
+  y toquen "Por acomodar": se pone en verde.
 
-Las marcas empiezan en blanco cada día. La hoja **se actualiza sola cada 30 segundos** mientras
+Hasta abajo, la última fila dice **"Productos totales: N"**: la suma de las cantidades de toda la
+hoja, de todas las zonas (piezas y kilos se suman juntos).
+
+Las marcas empiezan en blanco cada día. La hoja **se actualiza sola cada 5 segundos** mientras
 la pantalla esté abierta: no hace falta recargarla para ver los pedidos nuevos. En el celular
 cabe a lo ancho, sin deslizar a los lados.
 
