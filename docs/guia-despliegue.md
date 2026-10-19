@@ -1206,6 +1206,9 @@ Todos en la **VM**, desde `/home/ubuntu/plasticos-duran-ia/docker/prod`.
 
 ### Actualizar tras un cambio en el repo (sin perder datos)
 
+> **Aviso:** el procedimiento detallado y vigente para actualizar duranPROD está en
+> [despliegue-produccion.md](despliegue-produccion.md). Úsalo en lugar de los comandos de abajo.
+
 **Dónde:** VM
 
 ```
