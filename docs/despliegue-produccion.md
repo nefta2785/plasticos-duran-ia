@@ -40,8 +40,9 @@ Qué llevó:
   renglón (Acomodar / Por acomodar / Acomodado). Trae un campo nuevo (`productos_totales`) y
   archivos JS/CSS nuevos: **necesita actualizar el módulo**, no basta con reiniciar.
 - `duran_peso_variable`: la regla de "máximo 1 rollo por movimiento" solo aplica a entregas al
-  cliente (las compras, ajustes de inventario, transferencias internas y devoluciones a proveedor
-  ya pueden llevar varios rollos).
+  cliente (los ajustes de inventario, transferencias internas y devoluciones a proveedor ya pueden
+  llevar varios rollos). Compras (`purchase`) no está instalado en duranPROD: las compras podrán
+  llevar varios rollos cuando se instale.
 
 En los siguientes despliegues, cambia los dos commits por los que correspondan.
 
