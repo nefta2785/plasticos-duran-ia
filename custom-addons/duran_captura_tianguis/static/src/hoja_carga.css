@@ -7,25 +7,42 @@
     color: #c2410c !important;
 }
 
-/* Cuadro de marcar (☐ Acomodado / ☑ Quitar) de 44 x 44, del tamaño de un dedo. */
-.o_hoja_carga .o_data_row button.o_hoja_carga_cuadro {
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    font-size: 24px;
-    line-height: 1;
+/* Botón Acomodar / Por acomodar / Acomodado: al menos 44 px de alto, del
+   tamaño de un dedo. "Por acomodar" se parte en dos líneas antes que ensanchar
+   la columna; las palabras no se cortan (la celda lleva overflow-wrap: anywhere).
+   !important: el nowrap de Odoo (list_renderer.scss, td.o_list_button > div >
+   button) pesa más que esta regla. */
+.o_hoja_carga .o_data_row td.o_list_button > div > button.o_hoja_carga_boton {
+    min-height: 44px;
+    max-width: 100px;
+    padding: 4px 8px !important;
+    line-height: 1.15;
+    white-space: normal !important;
+    overflow-wrap: normal;
 }
-.o_hoja_carga .o_data_row button.o_hoja_carga_cuadro .o_button_icon {
-    margin: 0 !important;
+/* En el celular la columna del botón queda 19 px más ancha que el botón y el
+   Producto ya está en su mínimo (80 px, column_width_hook.js): con 84 px y
+   letra de 13 px, "Acomodado" cabe en una línea y la fila en 393 px. */
+@media (max-width: 575.98px) {
+    .o_hoja_carga .o_data_row td.o_list_button > div > button.o_hoja_carga_boton {
+        max-width: 84px;
+        padding: 4px !important;
+        font-size: 13px;
+    }
 }
-/* El texto del botón no se ve, pero queda como su nombre (lectores de pantalla). */
-.o_hoja_carga .o_data_row button.o_hoja_carga_cuadro > span {
-    position: absolute !important;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
+
+/* "Por acomodar": el mismo naranja que el renglón (btn-warning es ámbar). */
+.o_hoja_carga .o_data_row button.o_hoja_carga_por_acomodar,
+.o_hoja_carga .o_data_row button.o_hoja_carga_por_acomodar:focus-visible {
+    color: #fff;
+    background-color: #c2410c;
+    border-color: #c2410c;
+}
+.o_hoja_carga .o_data_row button.o_hoja_carga_por_acomodar:hover,
+.o_hoja_carga .o_data_row button.o_hoja_carga_por_acomodar:active {
+    color: #fff;
+    background-color: #9a3412;
+    border-color: #9a3412;
 }
 
 /* Que el producto y el aviso se lean completos: pueden ocupar dos líneas. */

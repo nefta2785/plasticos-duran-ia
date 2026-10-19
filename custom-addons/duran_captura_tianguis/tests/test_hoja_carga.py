@@ -259,7 +259,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._pedido([(producto, 4)])
         self.assertEqual(self._estado(producto), (4.0, "sin_marcar", None))
         self._acomodado(producto)
-        self.assertEqual(self._estado(producto), (4.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto), (4.0, "acomodado", None))
         marca = self._marcas(producto)
         self.assertEqual(
             (marca.zona_id, marca.fecha, marca.cantidad, marca.user_id), (self.zona, _hoy(), 4.0, self.papa),
@@ -267,7 +267,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         # Doble toque (o un toque con la pantalla vieja): la misma marca.
         self._renglon(producto).with_user(self.papa).with_context(cantidad_vista=4.0).action_acomodado()
         self.assertEqual(self._marcas(producto), marca)
-        self.assertEqual(self._estado(producto), (4.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto), (4.0, "acomodado", None))
 
     def test_se_marca_lo_que_se_veia_en_pantalla(self):
         """ Entró un pedido mientras el papá miraba (veía 3, ya son 4): se
@@ -288,7 +288,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual(self._estado(producto), (6.0, "agregado", "Se agregaron 4"))
         # Volver a tocar: se marca con el nuevo total y queda en verde.
         self._acomodado(producto)
-        self.assertEqual(self._estado(producto), (6.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto), (6.0, "acomodado", None))
         self.assertEqual(self._marcas(producto).cantidad, 6.0)
         # Por kg, con decimales y sin ceros sobrantes.
         self._pedido([(self.kilo, 2)])
@@ -312,32 +312,50 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         ]
         self.assertLessEqual(len(colores), 1, "un solo color por renglón")
         botones = [b.get("string") for b in arch.xpath("//button") if not safe_eval(b.get("invisible"), valores)]
-        self.assertEqual(len(botones), 1, "un solo cuadro por renglón")
+        self.assertEqual(len(botones), 1, "un solo botón por renglón")
         return (colores[0] if colores else None, renglon.aviso or None, botones[0])
 
     def test_sin_marca_sin_color(self):
         producto = self._producto("Sin marca hoja de carga")
         self._pedido([(producto, 3)])
         self.assertEqual(self._estado(producto), (3.0, "sin_marcar", None))
-        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodado"))
+        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodar"))
 
     def test_total_igual_a_lo_marcado_verde(self):
         producto = self._producto("Igual hoja de carga")
         self._pedido([(producto, 5)])
         self._acomodado(producto)
-        self.assertEqual(self._estado(producto), (5.0, "acomodado", "Acomodado"))
-        self.assertEqual(self._en_pantalla(producto), ("verde", "Acomodado", "Quitar"))
+        self.assertEqual(self._estado(producto), (5.0, "acomodado", None))
+        self.assertEqual(self._en_pantalla(producto), ("verde", None, "Acomodado"))
+
+    def test_aviso_vacio_en_verde(self):
+        """ En verde el Aviso va vacío (el botón ya dice "Acomodado"), también
+        si el total bajó; en naranja dice cuánto se agregó y el botón no. """
+        producto = self._producto("Aviso verde hoja de carga")
+        self._pedido([(producto, 2)])
+        cancelado = self._pedido([(producto, 1)])
+        self._acomodado(producto)
+        self.assertFalse(self._renglon(producto).aviso)
+        cancelado._action_cancel()
+        self.assertEqual(self._en_pantalla(producto), ("verde", None, "Acomodado"))
+        self.assertFalse(self._renglon(producto).aviso)
+        self._pedido([(producto, 3)])
+        self.assertEqual(self._en_pantalla(producto), ("naranja", "Se agregaron 2", "Por acomodar"))
+        # Tocar "Por acomodar" marca el total de ahora: verde y sin aviso.
+        self._acomodado(producto)
+        self.assertEqual(self._estado(producto), (5.0, "acomodado", None))
+        self.assertEqual(self._en_pantalla(producto), ("verde", None, "Acomodado"))
 
     def test_total_menor_que_lo_marcado_verde(self):
         """ Bajó el total (se canceló un pedido o la mamá entregó parte): lo
-        marcado alcanza, sigue verde con ☑ "Quitar". Ya no hay estado "bajó". """
+        marcado alcanza, sigue verde con el botón "Acomodado". Ya no hay estado "bajó". """
         producto = self._producto("Menor hoja de carga")
         self._pedido([(producto, 3)])
         cancelado = self._pedido([(producto, 2)])
         self._acomodado(producto)
         cancelado._action_cancel()
-        self.assertEqual(self._estado(producto), (3.0, "acomodado", "Acomodado"))
-        self.assertEqual(self._en_pantalla(producto), ("verde", "Acomodado", "Quitar"))
+        self.assertEqual(self._estado(producto), (3.0, "acomodado", None))
+        self.assertEqual(self._en_pantalla(producto), ("verde", None, "Acomodado"))
         self.assertEqual(self._marcas(producto).cantidad, 5.0, "la marca no cambia")
         # Entrega parcial con backorder (desde Odoo; la app no hace backorders):
         # lo demás pasa a un movimiento nuevo, posterior a la marca, y sale sin
@@ -348,10 +366,10 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._paso_el_tiempo(entregado)
         self._parcial(orden, 2, backorder=True)
         self.assertEqual(self._estado(entregado), (3.0, "sin_marcar", None))
-        self.assertEqual(self._en_pantalla(entregado), (None, None, "Acomodado"))
-        # Con ☑ "Quitar" se desmarca.
+        self.assertEqual(self._en_pantalla(entregado), (None, None, "Acomodar"))
+        # El botón verde "Acomodado" desmarca.
         self._quitar(producto)
-        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodado"))
+        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodar"))
         self.assertEqual(
             [v for v, _e in self.env["duran.hoja.carga"]._fields["estado"].selection],
             ["sin_marcar", "acomodado", "agregado"],
@@ -363,7 +381,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._acomodado(producto)
         self._pedido([(producto, 1)])
         self.assertEqual(self._estado(producto), (3.0, "agregado", "Se agregó 1"))
-        self.assertEqual(self._en_pantalla(producto), ("naranja", "Se agregó 1", "Acomodado"))
+        self.assertEqual(self._en_pantalla(producto), ("naranja", "Se agregó 1", "Por acomodar"))
         # 1 kg exacto también es "Se agregó 1".
         self._pedido([(self.kilo, 1.5)])
         self._acomodado(self.kilo)
@@ -376,14 +394,14 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._acomodado(producto)
         self._pedido([(producto, 3)])
         self.assertEqual(self._estado(producto), (5.0, "agregado", "Se agregaron 3"))
-        self.assertEqual(self._en_pantalla(producto), ("naranja", "Se agregaron 3", "Acomodado"))
+        self.assertEqual(self._en_pantalla(producto), ("naranja", "Se agregaron 3", "Por acomodar"))
         # Por kg, menos de 1 o con decimales: coma de es_419, sin ceros sobrantes.
         self._pedido([(self.kilo, 2)])
         self._acomodado(self.kilo)
         self._pedido([(self.kilo, 0.5)])
         self.assertEqual(self._estado(self.kilo), (2.5, "agregado", "Se agregaron 0,5"))
         self._pedido([(self.kilo, 1.25)])
-        self.assertEqual(self._en_pantalla(self.kilo), ("naranja", "Se agregaron 1,75", "Acomodado"))
+        self.assertEqual(self._en_pantalla(self.kilo), ("naranja", "Se agregaron 1,75", "Por acomodar"))
 
     def test_baja_y_luego_sube_sin_pasar_de_lo_marcado(self):
         """ Limitación aceptada: bajó por una entrega y luego entró un pedido
@@ -395,7 +413,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._acomodado(producto)
         cancelado._action_cancel()
         self._pedido([(producto, 2)])
-        self.assertEqual(self._estado(producto), (5.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto), (5.0, "acomodado", None))
         self._pedido([(producto, 1)])
         self.assertEqual(self._estado(producto), (6.0, "agregado", "Se agregó 1"))
 
@@ -420,7 +438,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         # Marcar hoy no toca la de ayer.
         self._acomodado(producto)
         self.assertEqual(len(self._marcas(producto)), 2)
-        self.assertEqual(self._estado(producto), (2.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto), (2.0, "acomodado", None))
 
     def test_producto_nuevo_despues_de_otras_marcas(self):
         marcado = self._producto("Marcado antes hoja de carga")
@@ -429,7 +447,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         nuevo = self._producto("Nuevo hoja de carga")
         self._pedido([(nuevo, 2)])
         self.assertEqual(self._estado(nuevo), (2.0, "sin_marcar", None))
-        self.assertEqual(self._estado(marcado), (1.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(marcado), (1.0, "acomodado", None))
 
     def test_pendiente_cero_deja_de_aparecer(self):
         producto = self._producto("Entregado hoja de carga")
@@ -446,14 +464,14 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         primero = self._pedido([(producto, 1)])
         segundo = self._pedido([(producto, 1)])
         self._acomodado(producto)
-        self.assertEqual(self._estado(producto), (2.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto), (2.0, "acomodado", None))
         self._paso_el_tiempo(producto)
         self._validar(primero.picking_ids)
         self._validar(segundo.picking_ids)
         self.assertFalse(self._renglon(producto))
         self._pedido([(producto, 1)])
         self.assertEqual(self._estado(producto), (1.0, "sin_marcar", None))
-        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodado"))
+        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodar"))
         self.assertEqual(self._marcas(producto).cantidad, 2.0, "la marca no se toca")
 
     def test_volver_a_marcar_con_la_misma_cantidad_despues_de_entregar_todo(self):
@@ -469,8 +487,8 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertEqual(self._estado(producto), (2.0, "sin_marcar", None))
         self._acomodado(producto)
         self.assertEqual(self._marcas(producto), marca)
-        self.assertEqual(self._estado(producto), (2.0, "acomodado", "Acomodado"))
-        self.assertEqual(self._en_pantalla(producto), ("verde", "Acomodado", "Quitar"))
+        self.assertEqual(self._estado(producto), (2.0, "acomodado", None))
+        self.assertEqual(self._en_pantalla(producto), ("verde", None, "Acomodado"))
 
     def test_todo_lo_marcado_cancelado_y_pedido_nuevo_sin_marca(self):
         producto = self._producto("Cancelado y nuevo hoja de carga")
@@ -483,23 +501,23 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self.assertFalse(self._renglon(producto))
         self._pedido([(producto, 1)])
         self.assertEqual(self._estado(producto), (1.0, "sin_marcar", None))
-        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodado"))
+        self.assertEqual(self._en_pantalla(producto), (None, None, "Acomodar"))
 
     def test_mismo_producto_en_dos_zonas(self):
         producto = self._producto("Dos zonas hoja de carga")
         self._pedido([(producto, 2)])
         self._pedido([(producto, 5)], cliente=self.cliente_b, zona=self.zona_b)
         self._acomodado(producto, self.zona)
-        self.assertEqual(self._estado(producto, self.zona), (2.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto, self.zona), (2.0, "acomodado", None))
         self.assertEqual(self._estado(producto, self.zona_b), (5.0, "sin_marcar", None))
         # Un pedido nuevo en la OTRA zona no cambia el aviso de la zona marcada.
         self._pedido([(producto, 3)], cliente=self.cliente_b, zona=self.zona_b)
-        self.assertEqual(self._estado(producto, self.zona), (2.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto, self.zona), (2.0, "acomodado", None))
         self.assertEqual(self._estado(producto, self.zona_b), (8.0, "sin_marcar", None))
         # Marcar y quitar en la otra zona tampoco.
         self._acomodado(producto, self.zona_b)
         self._quitar(producto, self.zona_b)
-        self.assertEqual(self._estado(producto, self.zona), (2.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto, self.zona), (2.0, "acomodado", None))
         self.assertEqual(self._marcas(producto).zona_id, self.zona)
 
     def test_sin_zona_tambien_se_marca(self):
@@ -508,7 +526,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._pedido([(producto, 2)], cliente=dos_zonas, zona=False)
         self._acomodado(producto, False)
         self._acomodado(producto, False)
-        self.assertEqual(self._estado(producto, False), (2.0, "acomodado", "Acomodado"))
+        self.assertEqual(self._estado(producto, False), (2.0, "acomodado", None))
         self.assertEqual(len(self._marcas(producto)), 1)
 
     def test_otro_gerente_marca_la_misma_marca(self):
@@ -558,7 +576,7 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         # Marcado en 4,5 y se cancela el pedido de 2: lo marcado alcanza, verde.
         self._acomodado(self.kilo)
         primero._action_cancel()
-        self.assertEqual(aviso("es_419"), ("acomodado", "Acomodado"))
+        self.assertEqual(aviso("es_419"), ("acomodado", False))
 
     def test_columna_de_cantidad(self):
         """ Total y unidad juntos: piezas sin decimales y como "pz"; kg con los
@@ -621,18 +639,25 @@ class TestHojaCarga(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
                 "decoration-info": None,
             },
         )
-        # Cuadro de marcar: ☐ Acomodado / ☑ Quitar, con su nombre (string y title).
+        # Un botón con texto por estado: gris "Acomodar" y naranja "Por acomodar"
+        # marcan con lo que se veía; verde "Acomodado" quita la marca. Sin
+        # icono, y sin width para que Odoo los junte en una sola columna.
         self.assertEqual(
             [
-                (b.get("name"), b.get("string"), b.get("title"), b.get("icon"), b.get("invisible"), b.get("context"))
+                (b.get("name"), b.get("string"), b.get("title"), b.get("class"), b.get("invisible"), b.get("context"))
                 for b in arch.xpath("//button")
             ],
             [
-                ("action_acomodado", "Acomodado", "Acomodado", "fa-square-o", "estado == 'acomodado'",
-                 "{'cantidad_vista': total}"),
-                ("action_quitar", "Quitar", "Quitar", "fa-check-square-o", "estado != 'acomodado'", None),
+                ("action_acomodado", "Acomodar", "Acomodar", "btn-secondary o_hoja_carga_boton",
+                 "estado != 'sin_marcar'", "{'cantidad_vista': total}"),
+                ("action_acomodado", "Por acomodar", "Por acomodar",
+                 "btn-secondary o_hoja_carga_boton o_hoja_carga_por_acomodar",
+                 "estado != 'agregado'", "{'cantidad_vista': total}"),
+                ("action_quitar", "Acomodado", "Acomodado", "btn-success o_hoja_carga_boton",
+                 "estado != 'acomodado'", None),
             ],
         )
+        self.assertFalse(arch.xpath("//button[@icon or @width]"))
         busqueda = etree.fromstring(self.env["duran.hoja.carga"].get_views(
             [(self.accion.search_view_id.id, "search")],
         )["views"]["search"]["arch"])

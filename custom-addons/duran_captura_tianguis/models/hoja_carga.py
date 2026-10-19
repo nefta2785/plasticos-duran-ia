@@ -139,10 +139,9 @@ class DuranHojaCarga(models.Model):
 
     @api.depends("estado", "total", "cantidad_marcada")
     def _compute_aviso(self):
+        # En verde va vacío: el botón ya dice "Acomodado".
         for renglon in self:
-            if renglon.estado == "acomodado":
-                renglon.aviso = _("Acomodado")
-            elif renglon.estado == "agregado":
+            if renglon.estado == "agregado":
                 diferencia = renglon._redondear(renglon.total - renglon.cantidad_marcada)
                 if diferencia == 1:
                     renglon.aviso = _("Se agregó 1")

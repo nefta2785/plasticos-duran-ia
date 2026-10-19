@@ -28,13 +28,19 @@
                 <!-- Oculto: solo para el pie "Productos totales: N" (hoja_carga_lista.js),
                      que suma los totales de cada zona (aggregator="sum" en el modelo). -->
                 <field name="productos_totales" column_invisible="True"/>
-                <!-- Cuadro de marcar: ☐ marca con lo que se veía en pantalla, ☑ quita
-                     la marca. El texto queda como nombre accesible (oculto con CSS). -->
-                <button name="action_acomodado" type="object" string="Acomodado" title="Acomodado"
-                        icon="fa-square-o" class="btn-secondary o_hoja_carga_cuadro"
-                        invisible="estado == 'acomodado'" context="{'cantidad_vista': total}"/>
-                <button name="action_quitar" type="object" string="Quitar" title="Quitar"
-                        icon="fa-check-square-o" class="btn-secondary o_hoja_carga_cuadro"
+                <!-- Un botón con texto por renglón, en la misma columna (sin width:
+                     así Odoo los junta). Gris "Acomodar" y naranja "Por acomodar"
+                     marcan con lo que se veía en pantalla; verde "Acomodado" quita la
+                     marca. Colores y tamaño en hoja_carga.css; el naranja lleva
+                     btn-secondary solo para que Odoo no le ponga btn-link (view_button.js). -->
+                <button name="action_acomodado" type="object" string="Acomodar" title="Acomodar"
+                        class="btn-secondary o_hoja_carga_boton"
+                        invisible="estado != 'sin_marcar'" context="{'cantidad_vista': total}"/>
+                <button name="action_acomodado" type="object" string="Por acomodar" title="Por acomodar"
+                        class="btn-secondary o_hoja_carga_boton o_hoja_carga_por_acomodar"
+                        invisible="estado != 'agregado'" context="{'cantidad_vista': total}"/>
+                <button name="action_quitar" type="object" string="Acomodado" title="Acomodado"
+                        class="btn-success o_hoja_carga_boton"
                         invisible="estado != 'acomodado'"/>
             </list>
         </field>
