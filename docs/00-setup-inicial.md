@@ -1,7 +1,9 @@
-# Setup Inicial — Plásticos Durán IA
+# Setup inicial del entorno local (duranDEV) — Plásticos Durán
 
 **Fecha:** Septiembre 2026
 **Objetivo de esta sesión:** dejar el proyecto arrancado con repositorio en GitHub, entorno de desarrollo aislado, y Odoo Community 19 corriendo localmente con su primera base de datos.
+
+> Bitácora de septiembre de 2026. Los datos que solo existen fuera del repo (otros proyectos en la Mac, versiones de git y Docker Desktop, opciones elegidas al crear duranDEV) son **no verificados**. Para producción ver [guia-despliegue.md](guia-despliegue.md) y [despliegue-produccion.md](despliegue-produccion.md).
 
 ---
 
@@ -15,7 +17,7 @@
 | Puerto de Postgres | **5433** (host) → 5432 (contenedor) | Mismo motivo — se verificó con `lsof` que estaba libre antes de usarlo |
 | Nomenclatura de bases de datos | `duranDEV` / `duranPROD` (camelCase) | Decisión explícita del usuario — distinta al patrón `gym_dev`/`gym_prod` de la academia (snake_case), pero se mantiene así por ser la que ya se usó al crear la primera base |
 | Manejo de credenciales | Archivo `.env` real (nunca se sube a git) + `.env.example` como plantilla (sí se sube, sin valores reales) | Evita que contraseñas terminen en el historial de GitHub. `.env` está declarado en `.gitignore` |
-| Estructura de carpetas | `custom-addons/`, `ai-pipeline/`, `docs/`, `docker/` | Separa claramente: código de Odoo, scripts del pipeline de IA, documentación, y configuración de infraestructura |
+| Estructura de carpetas | `custom-addons/`, `docs/`, `docker/` | Separa claramente: código de Odoo, documentación, y configuración de infraestructura |
 | Construcción de archivos de configuración | Vía prompts scoped a Claude Code, no escritos a mano en el chat | El usuario está aprendiendo a programar — se usa Claude Code como el "constructor" real, revisando cada propuesta antes de aceptarla |
 
 ---
@@ -43,14 +45,14 @@ python3 --version  → no encontrado en el PATH del sistema (sin problema: con D
 cd ~/Documents
 git clone https://github.com/nefta2785/plasticos-duran-ia.git
 cd plasticos-duran-ia
-mkdir custom-addons ai-pipeline docs docker
+mkdir custom-addons docs docker
 ```
 El proyecto vive en `~/Documents/plasticos-duran-ia`.
 
 ### 2.5 Scaffolding inicial (`.gitignore` + `README.md`)
 Se le dio a Claude Code un prompt scoped para crear:
 - `.gitignore`: ignora artefactos de Python (`__pycache__`, `.pyc`, entornos virtuales), archivos de macOS (`.DS_Store`), variables de entorno (`.env`), y archivos típicos de una instancia local de Odoo (filestore, sesiones, logs).
-- `README.md`: nombre del proyecto, propósito, y descripción de las 4 carpetas.
+- `README.md`: nombre del proyecto, propósito y descripción de las carpetas (después se reescribió; ver [README.md](../README.md)).
 
 Commit: `"Estructura inicial del proyecto"` → subido a GitHub.
 
@@ -71,7 +73,7 @@ Se le dio a Claude Code un segundo prompt scoped, pidiéndole explícitamente **
 
 Commit: `"Configuración de Docker para Odoo Community aislado"` → subido a GitHub.
 
-**Investigado (no es un problema):** el log de Odoo mostró un warning: `invalid addons directory '/mnt/extra-addons', skipped`. Se diagnosticó paso a paso (se descartaron permisos con `docker compose exec odoo ls -la /mnt/extra-addons`, que salió correcto) hasta confirmar, con la documentación oficial de Odoo, que este warning es el comportamiento esperado cuando la carpeta de addons está **vacía** — Odoo la descarta hasta que contenga al menos un módulo. Se resolverá solo en cuanto se coloque el primer módulo custom en `custom-addons/`.
+**Investigado (no es un problema):** el log de Odoo mostró un warning: `invalid addons directory '/mnt/extra-addons', skipped`. Se diagnosticó paso a paso (se descartaron permisos con `docker compose exec odoo ls -la /mnt/extra-addons`, que salió correcto) hasta confirmar, con la documentación oficial de Odoo, que este warning es el comportamiento esperado cuando la carpeta de addons está **vacía** — Odoo la descarta hasta que contenga al menos un módulo. Hoy `custom-addons/` ya contiene los dos módulos custom.
 
 ### 2.7 Archivo `.env` real
 ```
@@ -118,8 +120,7 @@ Se corrigió reescribiendo el nombre desde cero (`duranDEV`), sin espacios ni ca
 Mac (Apple Silicon M1)
 │
 ├── ~/Documents/plasticos-duran-ia/   ← repo git, conectado a GitHub (privado)
-│   ├── custom-addons/                ← (vacío) módulos custom de Odoo — montado dentro del contenedor
-│   ├── ai-pipeline/                  ← (vacío) scripts del pipeline de IA (fase siguiente)
+│   ├── custom-addons/                ← módulos custom de Odoo — montado dentro del contenedor
 │   ├── docs/                         ← documentación (este archivo)
 │   ├── docker/
 │   │   ├── docker-compose.yml        ← versionado en git
@@ -129,7 +130,7 @@ Mac (Apple Silicon M1)
 │   └── README.md
 │
 └── Docker Desktop
-    └── docker-compose (proyecto "docker")
+    └── docker-compose (proyecto "plasticos-duran")
         ├── contenedor "db"    (Postgres)   — puerto Mac 5433 → 5432
         └── contenedor "odoo"  (Odoo 19)    — puerto Mac 8071 → 8069
                                               → base de datos activa: duranDEV
@@ -139,9 +140,9 @@ Mac (Apple Silicon M1)
 
 ## 4. Pendientes conocidos
 
-- [ ] Documentar (fuera de este repo, en un lugar seguro del usuario) la Master Password del gestor de bases de datos.
-- [ ] Definir cuándo se crea `duranPROD` (base de producción) — no se ha creado todavía, solo `duranDEV`.
+- [ ] Documentar (fuera de este repo, en un lugar seguro del usuario) la Master Password del gestor de bases de datos. *(Estado: no verificado.)*
 
-## 5. Siguiente paso sugerido
+## 5. Después de este setup
 
-Iniciar el diseño de la **Fase 1: Levantamiento de pedidos** — el pipeline de IA (transcripción + extracción + fuzzy matching) y el módulo custom de Odoo que crea el pedido borrador.
+- Reglas y comandos de desarrollo: [CLAUDE.md](../CLAUDE.md) y [pruebas-captura.md](pruebas-captura.md).
+- Producción (duranPROD): [guia-despliegue.md](guia-despliegue.md) y [despliegue-produccion.md](despliegue-produccion.md).
