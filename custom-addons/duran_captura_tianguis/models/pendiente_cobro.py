@@ -123,11 +123,14 @@ class DuranPendienteCobro(models.Model):
 
                 -- Entregado sin facturar de antes de hoy: lo que se facturará de la línea
                 -- menos lo entregado hoy (que ya va en sus renglones).
+                -- El importe pasa por float8 antes de ROUND para redondear como Odoo
+                -- (float_round): price_unit es numeric y guarda el error binario
+                -- (225.67499999999998); float8 -> numeric lo deja en 15 dígitos (225.675).
                 SELECT l.id * 3 + 1, 'saldo', l.company_id, l.zona_id, l.cliente_id, l.pedido,
                        l.product_id, l.qty_to_invoice - COALESCE(h.cantidad, 0), l.product_uom_id,
                        CASE WHEN pt.es_peso_variable THEN ultima.peso_real END,
                        0.0,
-                       ROUND((l.qty_to_invoice * l.price_unit * (1 - COALESCE(l.discount, 0) / 100))::numeric,
+                       ROUND((l.qty_to_invoice * l.price_unit * (1 - COALESCE(l.discount, 0) / 100))::float8::numeric,
                              l.decimal_places) - COALESCE(h.importe, 0),
                        COALESCE(ultima.dia, (l.date_order AT TIME ZONE 'UTC' AT TIME ZONE %(tz)s)::date),
                        NULL, l.id, NULL
@@ -145,7 +148,7 @@ class DuranPendienteCobro(models.Model):
                        ORDER BY e.dia DESC, e.id DESC LIMIT 1
                   ) ultima ON TRUE
                  WHERE ROUND((l.qty_to_invoice - COALESCE(h.cantidad, 0))::numeric, p.digitos) <> 0
-                    OR ROUND((l.qty_to_invoice * l.price_unit * (1 - COALESCE(l.discount, 0) / 100))::numeric,
+                    OR ROUND((l.qty_to_invoice * l.price_unit * (1 - COALESCE(l.discount, 0) / 100))::float8::numeric,
                              l.decimal_places) - COALESCE(h.importe, 0) <> 0
 
                 UNION ALL

@@ -230,6 +230,24 @@ class TestPendienteCobro(CobroDatosPrueba, HttpCase):
             detalle["total_a_cobrar"],
         )
 
+    def test_centavos_de_peso_variable_sin_saldo_fantasma(self):
+        """ Precios con error binario (2.655 kg × 85 = 225.67499999999998): el
+        importe de la línea redondea como Odoo (225.68), así que lo entregado
+        hoy no deja un renglón de "saldo" de -0.01. """
+        cliente = self._nuevo_cliente("Cliente pendiente centavos")
+        precios = [225.67499999999998, 111.77499999999999]
+        orden = self._entregada(cliente, [(self.pieza, 1, p) for p in precios], zona_id=self.zona_con_clientes.id)
+        self.env.flush_all()
+        self.env.cr.execute(
+            "SELECT price_unit FROM sale_order_line WHERE order_id = %s ORDER BY id", [orden.id],
+        )
+        self.assertEqual([float(p) for (p,) in self.env.cr.fetchall()], precios, "la base guarda el error binario")
+        self.assertEqual(orden.order_line.sorted("id").mapped("price_subtotal"), [225.68, 111.78])
+        self.assertEqual(self._filas(cliente), [
+            ("hoy", orden.name, 1.0, 225.68, 0.0, 225.68, None, None),
+            ("hoy", orden.name, 1.0, 111.78, 0.0, 111.78, None, None),
+        ])
+
     def test_hoy_es_el_dia_en_mexico(self):
         """ Las 23:30 de hoy en México (ya mañana en UTC) son hoy; las 23:30 de
         ayer (ya hoy en UTC) son saldo de ayer. """
