@@ -1173,6 +1173,9 @@ selector.
 Anota la fecha del ensayo y el respaldo usado. Repítelo cada vez que cambie algo importante
 (versión de Odoo, módulos nuevos) y al menos cada pocos meses.
 
+**Ensayos realizados:** 16-nov-2026, respaldo `20261116-163959`: OK (restaurar.sh completo en la
+Mac, 24 productos, 536 adjuntos sin faltantes; `dropdb` necesitó `--force` por sesiones de Odoo).
+
 ### 14.8 Restaurar de verdad en producción (desastre)
 
 ⚠️ **Sin verificar:** no se ha ensayado todavía. En una VM nueva (o un stack limpio, sin base duranPROD), después de

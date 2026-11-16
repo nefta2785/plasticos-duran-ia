@@ -57,7 +57,7 @@ compose exec -T db sh -c 'createdb -U "$POSTGRES_USER" "$1"' _ "$DESTINO"
 # --no-owner: los objetos quedan del usuario que restaura (en DEV puede ser otro).
 compose exec -T db sh -c 'pg_restore -U "$POSTGRES_USER" -d "$1" --no-owner --exit-on-error' _ "$DESTINO" < "$DUMP"
 
-echo "Copiando el filestore a /var/lib/odoo/filestore/$DESTINO…"
+echo "Copiando el filestore a /var/lib/odoo/filestore/${DESTINO}…"
 # La carpeta de dentro del tar se llama como la base de origen: se renombra.
 compose exec -T odoo sh -c 'mkdir -p /var/lib/odoo/filestore && tar -C /var/lib/odoo/filestore -xzf - --transform "s,^[^/]*,$1,"' _ "$DESTINO" < "$FILESTORE"
 
