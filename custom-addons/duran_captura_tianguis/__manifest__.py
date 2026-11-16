@@ -25,6 +25,7 @@ Resumen de ventas).
         "views/captura_cobro_views.xml",
         "views/hoja_carga_views.xml",
         "views/pendiente_cobro_views.xml",
+        "views/productos_vendidos_views.xml",
         "views/captura_templates.xml",
         "views/captura_menus.xml",
     ],

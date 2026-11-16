@@ -184,3 +184,23 @@ cabe a lo ancho, sin deslizar a los lados.
 ## 9. Pendiente de cobro (para el papá)
 
 En **Ventas › Órdenes › Pendiente de cobro** se ve, por zona y cliente, **lo entregado hoy más los saldos anteriores** (facturas sin pagar, saldos a favor y entregas de otros días sin cobrar); un renglón en **rojo** es un saldo con **más de 7 días**, y el **Total a cobrar** de cada cliente es el mismo que muestra la pantalla de **Cobro** de la app.
+
+## 10. Productos vendidos (para el papá)
+
+En **Ventas › Órdenes › Productos vendidos** (debajo de Resumen de ventas) sale **cuánto se vendió
+y cuánto se devolvió de cada producto, por día**: un renglón por producto y día, sin importes en
+pesos. Abre con el filtro **Hoy** (el día en México); quítenlo para ver otros días, y en el
+buscador pueden **agrupar por Día o por Producto**. Solo la ven el papá y el administrador, y
+**se actualiza sola cada 5 segundos**.
+
+- **Vendido (unidades)**: piezas o rollos entregados ese día (un rollo = 1).
+- **Vendido (kg)**: kilos entregados ese día. En los rollos es la suma de su peso real; en los
+  productos que se venden por kilo, los kilos vendidos.
+- **Devuelto (unidades)** y **Devuelto (kg)**: lo mismo, pero de las devoluciones de ese día,
+  también las del **Cambio de producto** (en un cambio, el rollo nuevo cuenta en Vendido y el
+  devuelto en Devuelto).
+
+Si una columna no aplica al producto se ve **vacía** (los productos por kilo no tienen unidades;
+las piezas no tienen kg); si aplica pero no hubo movimiento, sale **0**. Una devolución en la
+que no se capturó el peso cuenta **0 kg**. Al pie, cada columna tiene su **total** (las piezas
+nunca se suman con los kilos).

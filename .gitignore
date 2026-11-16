@@ -79,3 +79,8 @@ logs/
 # Modelos de Whisper descargados localmente
 # *.pt
 # ai-pipeline/models/
+
+# ─────────────────────────────────────────────────────────────
+# Documentos locales que no se versionan
+# ─────────────────────────────────────────────────────────────
+/Manual_Operativo_NotebookLM.md

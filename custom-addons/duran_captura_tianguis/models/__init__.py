@@ -5,5 +5,6 @@ from . import captura_entrega
 from . import captura_cobro
 from . import stock_move
 from . import pendiente_cobro
+from . import productos_vendidos
 from . import hoja_carga
 from . import product_category

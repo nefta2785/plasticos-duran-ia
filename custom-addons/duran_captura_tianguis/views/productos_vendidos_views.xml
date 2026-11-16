@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Productos vendidos: un renglón por producto y día, con lo vendido y lo
+         devuelto en unidades y kg (vista SQL duran.productos.vendidos). Sin
+         importes en pesos. -->
+    <record id="productos_vendidos_view_list" model="ir.ui.view">
+        <field name="name">duran.productos.vendidos.list</field>
+        <field name="model">duran.productos.vendidos</field>
+        <field name="arch" type="xml">
+            <list string="Productos vendidos" js_class="duran_lista_recarga" create="false" edit="false" delete="false"
+                  default_order="dia desc, product_id">
+                <field name="usa_unidades" column_invisible="True"/>
+                <field name="usa_kg" column_invisible="True"/>
+                <field name="dia"/>
+                <field name="product_id"/>
+                <!-- Cada columna tiene una sola unidad: el total no mezcla piezas con kg.
+                     La columna que no aplica al producto se ve vacía. -->
+                <field name="vendido_unidades" sum="Total" invisible="not usa_unidades"/>
+                <field name="vendido_kg" sum="Total" invisible="not usa_kg"/>
+                <field name="devuelto_unidades" sum="Total" invisible="not usa_unidades"/>
+                <field name="devuelto_kg" sum="Total" invisible="not usa_kg"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="productos_vendidos_view_search" model="ir.ui.view">
+        <field name="name">duran.productos.vendidos.search</field>
+        <field name="model">duran.productos.vendidos</field>
+        <field name="arch" type="xml">
+            <search string="Productos vendidos">
+                <field name="product_id"/>
+                <!-- Hoy en México (calculado en la vista SQL, como Pendiente de cobro). -->
+                <filter string="Hoy" name="hoy" domain="[('es_hoy', '=', True)]"/>
+                <filter string="Día" name="filtro_dia" date="dia"/>
+                <group>
+                    <filter string="Día" name="agrupar_dia" context="{'group_by': 'dia:day'}"/>
+                    <filter string="Producto" name="agrupar_producto" context="{'group_by': 'product_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="productos_vendidos_action" model="ir.actions.act_window">
+        <field name="name">Productos vendidos</field>
+        <field name="res_model">duran.productos.vendidos</field>
+        <field name="view_mode">list</field>
+        <field name="view_id" ref="productos_vendidos_view_list"/>
+        <field name="search_view_id" ref="productos_vendidos_view_search"/>
+        <field name="group_ids" eval="[Command.link(ref('sales_team.group_sale_manager'))]"/>
+        <field name="context">{'search_default_hoy': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Todavía no hay productos vendidos</p>
+            <p>Aquí aparece, por producto y día, lo entregado a los clientes y lo devuelto, en piezas y kg.</p>
+        </field>
+    </record>
+
+    <menuitem id="productos_vendidos_menu"
+        name="Productos vendidos"
+        parent="sale.sale_order_menu"
+        action="productos_vendidos_action"
+        groups="sales_team.group_sale_manager"
+        sequence="9"/>
+
+</odoo>
