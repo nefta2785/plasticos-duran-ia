@@ -398,13 +398,15 @@ class TestCobroConfirmar(CobroDatosPrueba, HttpCase):
         self.assertEqual(self._detalle()["saldo_a_favor"], 10.0)
 
     def test_solo_saldo_anterior_no_crea_facturas(self):
+        # Con "Pagó una parte": "No pagó hoy" con solo saldo anterior se rechaza
+        # (ver test_no_pago_hoy_con_solo_saldo_anterior_se_rechaza_sin_crear_nada).
         anterior = self._facturada(self.cliente, 30.0)
-        registro = self._registro(self._confirmar())
+        registro = self._registro(self._confirmar(tipo="parte", monto=10))
         self.assertFalse(registro.invoice_ids)
         self.assertEqual(
-            [(l.move_id, l.tipo, l.aplicado) for l in registro.linea_ids], [(anterior, "anterior", 0.0)],
+            [(l.move_id, l.tipo, l.aplicado) for l in registro.linea_ids], [(anterior, "anterior", 10.0)],
         )
-        self.assertEqual(registro.saldo_pendiente, 30.0)
+        self.assertEqual(registro.saldo_pendiente, 20.0)
 
     # === Doble toque, cambios desde Odoo, rechazos y fallas === #
 
@@ -485,6 +487,43 @@ class TestCobroConfirmar(CobroDatosPrueba, HttpCase):
         antes = self._foto()
         self.assertEqual(self._error(self._params())["message"], "Este cliente no tiene nada que cobrar.")
         self.assertEqual(self._foto(), antes)
+
+    def test_no_pago_hoy_con_solo_saldo_anterior_se_rechaza_sin_crear_nada(self):
+        """ Regresión (duranPROD): "No pagó hoy" ya registrado y, horas
+        después, otra vez en el mismo cliente con solo ese saldo anterior. No
+        hay nada nuevo: se rechaza sin factura, pago ni renglón en la bitácora
+        (antes se creaba un segundo renglón con el mismo "Queda pendiente"). """
+        self._entregada(self.cliente, [(self.pieza, 1, 102.0)])
+        primero = self._registro(self._confirmar())
+        self.assertEqual((primero.tipo, primero.saldo_pendiente), ("nada", 102.0))
+        detalle = self._detalle()
+        self.assertEqual((detalle["entregado"], detalle["total_saldo_anterior"]), ([], 102.0))
+        self.assertTrue(detalle["puede_cobrar"], "Pagó todo / Pagó una parte siguen disponibles")
+        antes = self._foto()
+        self.assertEqual(
+            self._error(self._params())["message"], "Esta deuda ya está anotada. No hay nada nuevo que registrar.",
+        )
+        self.assertEqual(self._foto(), antes)
+        self.assertEqual(
+            self.env["duran.captura.cobro"].search_count([("partner_id", "=", self.cliente.id)]), 1,
+        )
+        # Pagó una parte y Pagó todo siguen funcionando con solo saldo anterior.
+        parte = self._registro(self._confirmar(tipo="parte", monto=2))
+        self.assertEqual((parte.monto_recibido, parte.saldo_pendiente), (2.0, 100.0))
+        todo = self._registro(self._confirmar(tipo="todo"))
+        self.assertEqual((todo.monto_recibido, todo.saldo_pendiente), (100.0, 0.0))
+
+    def test_no_pago_hoy_con_saldo_anterior_y_algo_entregado_sigue_igual(self):
+        anterior = self._facturada(self.cliente, 30.0, fecha=self.hace_10_dias)
+        self._entregada(self.cliente, [(self.pieza, 2, 10.0)])
+        registro = self._registro(self._confirmar())
+        self.assertEqual(
+            (registro.tipo, registro.total_entregado, registro.saldo_anterior, registro.saldo_pendiente,
+             len(registro.invoice_ids), registro.payment_id),
+            ("nada", 20.0, 30.0, 50.0, 1, self.env["account.payment"]),
+        )
+        self.assertEqual((registro.invoice_ids.state, registro.invoice_ids.payment_state), ("posted", "not_paid"))
+        self.assertEqual(anterior.amount_residual, 30.0)
 
     def test_tipo_de_pago_invalido(self):
         self._entregada(self.cliente, [(self.pieza, 1)])

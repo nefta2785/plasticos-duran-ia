@@ -2220,8 +2220,12 @@
             acciones = lista([
                 el("button", { type: "button", class: "btn btn-primario btn-pago-todo", text: TIPOS_COBRO.todo, onclick: () => elegirPago("todo") }),
                 el("button", { type: "button", class: "btn btn-secundario", text: TIPOS_COBRO.parte, onclick: () => elegirPago("parte") }),
-                el("button", { type: "button", class: "btn btn-secundario", text: TIPOS_COBRO.nada, onclick: () => elegirPago("nada") }),
-            ]);
+                // "No pagó hoy" solo si hay algo entregado sin facturar: con solo
+                // saldo anterior la deuda ya está anotada (el servidor lo rechaza).
+                d.entregado.length
+                    ? el("button", { type: "button", class: "btn btn-secundario", text: TIPOS_COBRO.nada, onclick: () => elegirPago("nada") })
+                    : null,
+            ].filter(Boolean));
         } else if (!bloqueado) {
             acciones = aviso("No hay nada que cobrarle.");
         }

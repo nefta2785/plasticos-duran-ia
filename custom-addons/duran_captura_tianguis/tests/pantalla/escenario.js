@@ -1213,6 +1213,12 @@ async function pasoCobroAvisos() {
         [qa(".cobro-entregado").length, importesCobro(".cobro-anterior")],
         [0, [["INV/2026/00015", "Del 25/09/2026", "$150.00"]]]
     );
+    check(
+        "Solo saldo anterior: sin «No pagó hoy»; «Pagó todo» y «Pagó una parte» sí",
+        qa(".acciones-cobro .btn").map((b) => b.textContent),
+        ["Pagó todo", "Pagó una parte"]
+    );
+    check("Solo saldo anterior: sin renglón vacío en los botones", qa(".acciones-cobro li").length, 2);
     await regresar();
 }
 
@@ -1232,7 +1238,7 @@ async function pasoCobroDetalle() {
     check("Detalle: TOTAL A COBRAR grande, con formato $1,234.50", [txt(".total-cobro .total-etiqueta"), txt(".total-cobro .total-monto")], ["Total a cobrar", "$1,300.00"]);
     const botones = qa(".acciones-cobro .btn");
     check(
-        "Detalle: «Pagó todo» principal; las otras dos, secundarias",
+        "Detalle: con algo entregado sin facturar, los tres botones; «Pagó todo» principal; las otras dos, secundarias",
         botones.map((b) => [b.textContent, b.classList.contains("btn-primario"), b.classList.contains("btn-secundario")]),
         [["Pagó todo", true, false], ["Pagó una parte", false, true], ["No pagó hoy", false, true]]
     );

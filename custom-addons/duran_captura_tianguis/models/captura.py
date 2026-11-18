@@ -1271,7 +1271,8 @@ class DuranCaptura(models.AbstractModel):
 
         :param tipo: cómo pagó: "todo" (el total a cobrar), "parte" (`monto`)
             o "nada" ("No pagó hoy": las facturas quedan publicadas y sin
-            pago).
+            pago). "nada" solo si hay algo entregado sin facturar; con solo
+            saldo anterior se rechaza (esa deuda ya está anotada).
         :param monto: solo con "parte": el efectivo recibido, mayor a 0, con
             máximo 2 decimales y sin pasar del total a cobrar. Lo que falte
             queda pendiente en las facturas.
@@ -1311,6 +1312,10 @@ class DuranCaptura(models.AbstractModel):
             raise UserError(_("Este cliente tiene una factura en borrador; confírmala o cancélala en Odoo."))
         if not cobro["puede_cobrar"]:
             raise UserError(_("Este cliente no tiene nada que cobrar."))
+        if tipo == "nada" and not cobro["entregado"]:
+            # Solo saldo anterior: ya está en sus facturas publicadas. Registrarlo
+            # otra vez solo repetiría la deuda en la bitácora.
+            raise UserError(_("Esta deuda ya está anotada. No hay nada nuevo que registrar."))
 
         currency = self.env.company.currency_id
         if tipo == "todo":
