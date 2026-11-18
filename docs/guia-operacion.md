@@ -199,14 +199,15 @@ pesos. Abre con el filtro **Hoy** (el día en México); quítenlo para ver otros
 buscador pueden **agrupar por Día o por Producto**. Solo la ven el papá y el administrador, y
 **se actualiza sola cada 5 segundos**.
 
-- **Vendido (unidades)**: piezas o rollos entregados ese día (un rollo = 1).
-- **Vendido (kg)**: kilos entregados ese día. En los rollos es la suma de su peso real; en los
-  productos que se venden por kilo, los kilos vendidos.
+- **Vendido (unidades)**: todo lo entregado ese día, contado por pieza (un rollo = 1). También
+  los productos que en Odoo tienen unidad kg pero se venden por pieza, como las **Bolsas de asa**
+  ("3 kg" en la app = 3 bolsas).
+- **Vendido (kg)**: solo el **peso real** de los rollos (productos de peso variable) entregados
+  ese día.
 - **Devuelto (unidades)** y **Devuelto (kg)**: lo mismo, pero de las devoluciones de ese día,
   también las del **Cambio de producto** (en un cambio, el rollo nuevo cuenta en Vendido y el
   devuelto en Devuelto).
 
-Si una columna no aplica al producto se ve **vacía** (los productos por kilo no tienen unidades;
-las piezas no tienen kg); si aplica pero no hubo movimiento, sale **0**. Una devolución en la
-que no se capturó el peso cuenta **0 kg**. Al pie, cada columna tiene su **total** (las piezas
-nunca se suman con los kilos).
+La columna de kg se ve **vacía** en lo que no es rollo; si aplica pero no hubo movimiento, sale
+**0**. Una devolución en la que no se capturó el peso cuenta **0 kg**. Al pie, cada columna tiene
+su **total**: el de **Vendido (unidades)** es el **total de productos vendidos** en el día.

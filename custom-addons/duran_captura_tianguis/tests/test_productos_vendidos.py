@@ -34,7 +34,8 @@ class TestProductosVendidos(CobroDatosPrueba, HttpCase):
         cls.menu = env.ref("duran_captura_tianguis.productos_vendidos_menu")
         kg = env.ref("uom.product_uom_kgm").id
         facturable = {"invoice_policy": "delivery", "taxes_id": [Command.clear()]}
-        cls.kilo = cls._plantilla("Kilo productos vendidos", uom_id=kg, **facturable).product_variant_id
+        # Unidad kg sin peso variable (como las Bolsas de asa): se vende por pieza.
+        cls.bolsa_asa = cls._plantilla("Bolsa asa productos vendidos", uom_id=kg, **facturable).product_variant_id
         # Peso variable con unidad kg (como "Hoja polipapel (KG suelto)"): se trata como rollo.
         cls.rollo_kg = cls._plantilla(
             "Rollo kg productos vendidos", uom_id=kg, es_peso_variable=True, precio_por_kg=70.0, **facturable,
@@ -42,7 +43,7 @@ class TestProductosVendidos(CobroDatosPrueba, HttpCase):
         cls.almacenable = cls._plantilla(
             "Almacenable productos vendidos", is_storable=True, **facturable,
         ).product_variant_id
-        cls.productos = cls.pieza | cls.otra_pieza | cls.rollo | cls.kilo | cls.rollo_kg | cls.almacenable
+        cls.productos = cls.pieza | cls.otra_pieza | cls.rollo | cls.bolsa_asa | cls.rollo_kg | cls.almacenable
         cls.almacen = env["stock.warehouse"].search([("company_id", "=", env.company.id)], limit=1)
         cls.hoy = fields.Date.context_today(env["res.partner"].with_context(tz=ZONA_HORARIA))
         cls.ayer = cls.hoy - timedelta(days=1)
@@ -147,16 +148,40 @@ class TestProductosVendidos(CobroDatosPrueba, HttpCase):
         asistente.action_confirm()
         self.assertEqual(self._filas(), [(self.hoy, self.rollo.name, 2.0, 3.3, 1.0, 0.5, True, True)])
 
-    def test_producto_por_kg_y_rollo_con_unidad_kg(self):
-        """ Normal con unidad kg: sin unidades, kg = cantidad. Peso variable con
-        unidad kg: se trata como rollo (unidades = rollos, kg = peso real). """
-        orden = self._entregada(self.cliente, [(self.kilo, 7, 40.0), (self.rollo_kg, 1)], pesos=(1.4,))
-        kilo = self._movimientos(orden).filtered(lambda m: m.product_id == self.kilo)
-        self._devolver(orden.picking_ids, {kilo: (2, None)})
+    def test_unidad_kg_cuenta_en_unidades_y_totales(self):
+        """ Sin peso variable, la unidad de medida no cuenta: un producto con
+        unidad kg (Bolsa de asa) va en unidades, sin kg, en Vendido y en
+        Devuelto. Peso variable con unidad kg: se trata como rollo (unidades =
+        rollos, kg = peso real). El total de unidades suma todo; el de kg, solo
+        el peso real. """
+        orden = self._entregada(
+            self.cliente, [(self.bolsa_asa, 3, 70.0), (self.pieza, 2, 10.0), (self.rollo, 2)], pesos=(1.5, 1.2),
+        )
+        self._entregada(self.otro_cliente, [(self.rollo_kg, 1)], pesos=(1.4,))
+        movimientos = self._movimientos(orden)
+        bolsa = movimientos.filtered(lambda m: m.product_id == self.bolsa_asa)
+        rollo_1 = movimientos.filtered(lambda m: m.product_id == self.rollo)[0]
+        self._devolver(orden.picking_ids, {bolsa: (2, None), rollo_1: (1, 0.8)})
         self.assertEqual(self._filas(), sorted([
-            (self.hoy, self.kilo.name, 0.0, 7.0, 0.0, 2.0, False, True),
+            (self.hoy, self.bolsa_asa.name, 3.0, 0.0, 2.0, 0.0, True, False),
+            (self.hoy, self.pieza.name, 2.0, 0.0, 0.0, 0.0, True, False),
+            (self.hoy, self.rollo.name, 2.0, 2.7, 1.0, 0.8, True, True),
             (self.hoy, self.rollo_kg.name, 1.0, 1.4, 0.0, 0.0, True, True),
         ]))
+        # El kg de la bolsa queda vacío (no 0) en la base: la columna no aplica.
+        renglon_bolsa = self._renglones().filtered(lambda r: r.product_id == self.bolsa_asa)
+        self.env.cr.execute(
+            "SELECT vendido_kg, devuelto_kg FROM duran_productos_vendidos WHERE id = %s", [renglon_bolsa.id],
+        )
+        self.assertEqual(self.env.cr.fetchone(), (None, None))
+        # Total al pie (sin agrupar): unidades vendidas = 3 + 2 + 2 + 1, devueltas
+        # = 2 + 1; kg solo peso real: 1.5 + 1.2 + 1.4 vendidos, 0.8 devueltos.
+        Vista = self.env["duran.productos.vendidos"].with_user(self.papa)
+        [totales] = Vista._read_group(
+            [("product_id", "in", self.productos.ids)], [],
+            ["vendido_unidades:sum", "vendido_kg:sum", "devuelto_unidades:sum", "devuelto_kg:sum"],
+        )
+        self.assertEqual(tuple(round(t, 3) for t in totales), (8.0, 4.1, 3.0, 0.8))
 
     def test_dia_es_el_de_mexico(self):
         """ Las 23:30 de hoy en México (ya mañana en UTC) son hoy; las 23:30 de

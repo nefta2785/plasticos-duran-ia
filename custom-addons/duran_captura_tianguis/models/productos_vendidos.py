@@ -23,9 +23,11 @@ class DuranProductosVendidos(models.Model):
       devolución" no cuenta ni como vendido ni como devuelto.
     - Unidades y kg:
         * peso variable (de cualquier unidad): unidades = rollos, kg = peso real;
-        * producto normal con unidad kg: sin unidades, kg = cantidad;
-        * producto normal por pieza: unidades = piezas, sin kg.
-      Así cada columna tiene una sola unidad y se puede sumar. """
+        * todo lo demás, sin importar su unidad de medida: unidades = cantidad,
+          sin kg (las Bolsas de asa tienen unidad kg pero se venden por pieza;
+          las cantidades siempre son enteras).
+      Así el total de Unidades es el total de productos vendidos y el de kg
+      solo lleva peso real. """
     _name = "duran.productos.vendidos"
     _description = "Productos vendidos"
     _auto = False
@@ -50,7 +52,6 @@ class DuranProductosVendidos(models.Model):
         self.env.cr.execute(SQL("CREATE VIEW %s AS (%s)", SQL.identifier(self._table), self._consulta()))
 
     def _consulta(self):
-        kg = self.env.ref("uom.product_uom_kgm")
         return SQL(
             """
             WITH movimientos AS (
@@ -77,17 +78,17 @@ class DuranProductosVendidos(models.Model):
             clasificados AS (
                 SELECT m.product_id, m.dia, m.es_venta,
                        COALESCE(pt.es_peso_variable, FALSE) AS es_peso_variable,
-                       (NOT COALESCE(pt.es_peso_variable, FALSE) AND pt.uom_id = %(kg)s) AS por_kg,
                        pt.uom_id, m.cantidad_entregada, m.peso_real
                   FROM movimientos m
                   JOIN product_product pp ON pp.id = m.product_id
                   JOIN product_template pt ON pt.id = pp.product_tmpl_id
             ),
             valores AS (
-                SELECT product_id, dia, es_venta, es_peso_variable, por_kg, uom_id,
-                       CASE WHEN NOT por_kg THEN cantidad_entregada END AS unidades,
-                       CASE WHEN es_peso_variable THEN COALESCE(peso_real, 0)
-                            WHEN por_kg THEN cantidad_entregada END AS kg
+                -- Unidades: siempre la cantidad (un rollo = 1). kg: solo el peso
+                -- real del peso variable; la unidad de medida no cuenta.
+                SELECT product_id, dia, es_venta, es_peso_variable, uom_id,
+                       cantidad_entregada AS unidades,
+                       CASE WHEN es_peso_variable THEN COALESCE(peso_real, 0) END AS kg
                   FROM clasificados
             )
             SELECT v.product_id::bigint * %(por_producto)s + (v.dia - DATE %(base)s) AS id,
@@ -96,14 +97,14 @@ class DuranProductosVendidos(models.Model):
                    v.product_id,
                    v.uom_id AS unidad_producto_id,
                    v.es_peso_variable,
-                   NOT v.por_kg AS usa_unidades,
-                   (v.es_peso_variable OR v.por_kg) AS usa_kg,
+                   TRUE AS usa_unidades,
+                   v.es_peso_variable AS usa_kg,
                    SUM(v.unidades) FILTER (WHERE v.es_venta) AS vendido_unidades,
                    SUM(v.kg) FILTER (WHERE v.es_venta) AS vendido_kg,
                    SUM(v.unidades) FILTER (WHERE NOT v.es_venta) AS devuelto_unidades,
                    SUM(v.kg) FILTER (WHERE NOT v.es_venta) AS devuelto_kg
               FROM valores v
-             GROUP BY v.product_id, v.dia, v.uom_id, v.es_peso_variable, v.por_kg
+             GROUP BY v.product_id, v.dia, v.uom_id, v.es_peso_variable
             """,
-            tz=ZONA_HORARIA_OPERACION, kg=kg.id, por_producto=DIAS_POR_PRODUCTO, base=DIA_BASE,
+            tz=ZONA_HORARIA_OPERACION, por_producto=DIAS_POR_PRODUCTO, base=DIA_BASE,
         )
