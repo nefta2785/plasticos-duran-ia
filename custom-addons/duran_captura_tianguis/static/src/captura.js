@@ -57,6 +57,7 @@
         clienteDibujado: null, // para abrir "Lo de siempre" al llegar a otro cliente
         token: null, // identifica ESTE pedido ante el servidor (evita duplicados)
         pedidoExtra: false, // pedido de «El cliente quiere algo más»: fuera de la entrega en curso
+        esOtro: false, // ya dijo «Es otro pedido» al aviso de pedido repetido (se olvida si cambia el pedido)
         enviando: false,
         errorEnvio: null,
         envio: null, // respuesta del servidor del último pedido enviado
@@ -118,6 +119,7 @@
     let catalogo = null; // [{id, nombre, productos: [...]}], se carga una sola vez
     let numeroVista = 0; // para descartar respuestas de una pantalla que ya se dejó
     let confirmando = false;
+    let preguntandoRepetido = false; // aviso de pedido repetido abierto o recién contestado
     let cerrarModal = null; // cierra la pregunta abierta con una respuesta
     let destinoEnPregunta = null; // entrada a la que iba "atrás" cuando se preguntó al salir
     let yendoAlInicio = false; // INICIO ya preguntó: el próximo "popstate" va directo al Inicio
@@ -500,6 +502,7 @@
     function vaciarPedido() {
         estado.pedido.clear();
         estado.token = null;
+        estado.esOtro = false;
         estado.errorEnvio = null;
         estado.pedidoExtra = false;
     }
@@ -1207,8 +1210,10 @@
     }
 
     function pedidoCambiado() {
-        // Un pedido distinto es un envío distinto: token nuevo al enviar.
+        // Un pedido distinto es un envío distinto: token nuevo al enviar, y el
+        // «Es otro pedido» del aviso de repetido ya no vale (se vuelve a revisar).
         estado.token = null;
+        estado.esOtro = false;
         estado.errorEnvio = null;
     }
 
@@ -1316,7 +1321,9 @@
 
     async function enviarPedido() {
         const lineas = lineasDelPedido();
-        if (estado.enviando || !lineas.length) {
+        // Con el aviso de repetido sin resolver, la respuesta manda: un toque
+        // que se cuele en el botón de abajo enviaría sin «Es otro pedido».
+        if (estado.enviando || preguntandoRepetido || !lineas.length) {
             return;
         }
         estado.enviando = true; // antes de cualquier await: bloquea el doble toque
@@ -1332,6 +1339,8 @@
                 lineas: lineas.map(({ producto, cantidad }) => ({ producto_id: producto.id, cantidad })),
                 // Solo el de «algo más»: queda para la siguiente vuelta.
                 ...(estado.pedidoExtra ? { extra: true } : {}),
+                // Solo después de «Es otro pedido»: se crea aunque haya uno igual hoy.
+                ...(estado.esOtro ? { es_otro: true } : {}),
             });
         } catch (error) {
             estado.enviando = false;
@@ -1343,6 +1352,17 @@
             return;
         }
         estado.enviando = false;
+        if (envio.posible_duplicado) {
+            // No se creó nada: el mismo token sirve para «Es otro pedido».
+            dibujarResumen();
+            preguntarSiEsOtro(envio.posible_duplicado);
+            return;
+        }
+        terminarEnvio(envio);
+    }
+
+    function terminarEnvio(envio) {
+        // Pantalla final del pedido: enviado o, con `repetido`, "no se repitió".
         // Antes de vaciar el pedido (que la apaga): ¿vino de «algo más»?
         const extra = estado.pedidoExtra;
         vaciarPedido();
@@ -1354,17 +1374,44 @@
         dibujar();
     }
 
+    async function preguntarSiEsOtro(igual) {
+        // El cliente ya tiene hoy un pedido igual (mismos productos y
+        // cantidades). No se bloquea: quien captura decide. "Cierto, el
+        // pedido ya fue enviado" es lo seguro (tiene el foco); tocar el fondo
+        // o "atrás" deja el pedido en el resumen, sin enviar.
+        const quien = igual.quien ? `${igual.quien} ya envió` : "Ya enviaste";
+        const entregado = igual.estado === "pendiente" ? "" : " Ya se le entregó.";
+        preguntandoRepetido = true;
+        const respuesta = await confirmar({
+            titulo: "Este pedido parece repetido",
+            texto: `${quien} un pedido igual de ${estado.cliente.nombre} hoy a las ${igual.hora} (${igual.nombre}).${entregado}`,
+            si: "Es otro pedido",
+            no: "Cierto, el pedido ya fue enviado",
+            claseSi: "btn-exito",
+        });
+        preguntandoRepetido = false;
+        if (respuesta === "si") {
+            // Se conserva hasta que cambie el pedido: un reintento sin señal no vuelve a preguntar.
+            estado.esOtro = true;
+            enviarPedido();
+        } else if (respuesta === "no") {
+            terminarEnvio({ repetido: true, nombre: igual.nombre, hora: igual.hora, cliente: estado.cliente.nombre });
+        }
+    }
+
     // === Pantallas de éxito (pedido enviado, entrega confirmada, cobro registrado) ===
 
-    function pantallaExito(titulo, detalles, principal) {
+    function pantallaExito(titulo, detalles, principal, neutra = false) {
         // Bloque verde inconfundible: palomeo grande y lo que se hizo en
         // mayúsculas. Sin datos (atrás o adelante), solo el encabezado y
         // "Ir a zonas"; con datos, debajo los detalles y a dónde seguir: el
         // botón `principal` (o "Siguiente cliente") y "Cambiar de zona".
+        // `neutra`: azul con una "i", para cuando NO se hizo nada (pedido que
+        // ya estaba): que no se confunda con un envío.
         const encabezado = el(
             "div",
-            { class: "exito", role: "status" },
-            el("p", { class: "exito-marca", "aria-hidden": "true", text: "✓" }),
+            { class: neutra ? "exito exito-neutra" : "exito", role: "status" },
+            el("p", { class: "exito-marca", "aria-hidden": "true", text: neutra ? "i" : "✓" }),
             el("p", { class: "exito-titulo", text: titulo }),
             ...(detalles || [])
         );
@@ -1405,6 +1452,23 @@
     function dibujarEnviado() {
         nuevaVista();
         const envio = estado.envio;
+        if (envio && envio.repetido) {
+            // "Cierto, el pedido ya fue enviado" en el aviso de pedido
+            // repetido: no se envió nada.
+            ponerTitulo("Pedido no repetido", estado.zona && estado.zona.nombre);
+            pantallaExito(
+                "NO SE REPITIÓ EL PEDIDO",
+                [
+                    el("p", {
+                        class: "enviado-detalle",
+                        text: `Ya estaba enviado: ${envio.nombre}, ${envio.cliente}, ${envio.hora}`,
+                    }),
+                ],
+                botonRegresarAEntrega(envio),
+                true
+            );
+            return;
+        }
         ponerTitulo("Pedido enviado", estado.zona && estado.zona.nombre);
         pantallaExito(
             "PEDIDO ENVIADO",

@@ -177,6 +177,7 @@ node custom-addons/duran_captura_tianguis/tests/pantalla/correr.mjs
 | Resumen sin precios ni total | — | Resumen |
 | Orden siempre nueva, con zona elegida y quien captura como vendedor, confirmada, con entrega, sin impuestos | `test_enviar.py` | Envío |
 | Sin duplicados (doble toque, reintento sin señal, token único en la base) | `test_enviar.py`, `test_zona_y_seguridad.py` | Envío |
+| Pedido repetido: aviso (no bloquea) si el cliente (o una dirección suya) ya tiene en el día operativo (corte de las 20:00) un pedido confirmado con los mismos productos y cantidades, sin importar el orden ni las líneas repetidas; el más reciente; canceladas y cotizaciones no cuentan; cantidad distinta, un producto más o menos, otro cliente u otro día no avisan; entregado con la cantidad bajada ya no es igual; estado pendiente / entregado / cobrado y "quién" solo si fue otra persona (sudo de solo lectura, probado con "solo sus documentos"); solo folio, hora, estado y quién; no crea nada; con `es_otro` sí crea (también extra); `es_otro` que no sea booleano se rechaza; el mismo token nunca avisa | `test_pedido_repetido.py` (y `test_enviar.py`) | Pedido repetido |
 | Validaciones (cantidades, productos, zona, cliente, token) sin dejar órdenes a medias | `test_enviar.py` | Error del servidor |
 | Zona en la orden: vistas, agrupar por Zona, no se copia al duplicar, no se borra si está en uso | `test_zona_y_seguridad.py` | — |
 | Inicio con tres modos (Pedido, Entrega y Cobro); Regresar desde Zonas vuelve al Inicio, también después de enviar pedidos | — | Inicio |
@@ -295,6 +296,35 @@ entregas pendientes y otro con algo por cobrar.
    "atrás" la cierra y se queda en la pantalla.
 5. **Al sol y con una mano:** que el aviso amarillo se lea, que el botón verde se distinga de la
    barra verde de Entrega (arriba) y que se alcance con el pulgar.
+
+## 7c. Lista de verificación en el celular: "Este pedido parece repetido"
+
+En duranDEV, con el usuario de tianguis, en el celular (vertical). Antes de las 20:00 (después
+de esa hora los pedidos cuentan para el día siguiente).
+
+1. **Aviso.** Pedido › zona › cliente › 2 productos › enviar: "PEDIDO ENVIADO". Volver a
+   levantarle exactamente lo mismo (en otro orden) y enviar.
+   - Sale "Este pedido parece repetido" con "Ya enviaste un pedido igual de [cliente] hoy a
+     las HH:MM (S000…)". Abajo, "Es otro pedido" (verde) y "Cierto, el pedido ya fue enviado"
+     (de contorno, con el foco; el texto ocupa dos renglones completos).
+   - Tocar fuera de la ventana, y luego "atrás" del celular: se queda en el resumen sin enviar.
+2. **"Cierto, el pedido ya fue enviado".** Enviar otra vez › tocarlo: pantalla azul "NO SE
+   REPITIÓ EL PEDIDO" con "Ya estaba enviado: S000…, [cliente], HH:MM" y los botones "Siguiente cliente
+   de [zona]" y "Cambiar de zona". INICIO va directo, sin preguntar ni "Pedido sin enviar". En
+   Odoo sigue habiendo **una sola** orden.
+3. **"Es otro pedido".** Levantar lo mismo › enviar › "Es otro pedido": "PEDIDO ENVIADO". En
+   Odoo hay dos órdenes. Con el modo avión al tocar "Es otro pedido": mensaje rojo; quitarlo y
+   tocar "✓ ENVIAR PEDIDO": se envía **sin volver a preguntar** y queda una sola orden nueva.
+4. **No avisa.** El mismo cliente con una cantidad distinta, o con un producto más: se envía
+   directo.
+5. **Otra persona.** Con el otro usuario de tianguis, levantar lo mismo para ese cliente:
+   "[Nombre] ya envió un pedido igual…". Si ese pedido ya se entregó, el texto termina en
+   "Ya se le entregó."
+6. **"+ El cliente quiere algo más".** En Entrega, desde un cliente con un pedido igual a lo que
+   se levanta: sale el aviso; "Cierto, el pedido ya fue enviado" muestra la pantalla azul con
+   "‹ Regresar a la entrega de [cliente]", que regresa a la entrega con lo capturado.
+7. **Al sol y con una mano:** que el texto del aviso se lea completo y que la pantalla azul no se
+   confunda con el verde de "PEDIDO ENVIADO".
 
 ## 8. Revisión a mano: hoja de carga en el celular
 

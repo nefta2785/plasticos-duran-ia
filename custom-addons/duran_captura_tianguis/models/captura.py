@@ -54,8 +54,9 @@ class DuranCaptura(models.AbstractModel):
     "Lo de siempre" (ver `get_habituales`), los precios de las líneas de venta
     de las entregas pendientes (ver `get_pendientes_entrega` y
     `_importes_entrega`), los límites de peso (parámetros del sistema), lo
-    que hay por cobrarle a un cliente (ver `get_cobro`) y el alta de un
-    cliente nuevo (ver `crear_cliente`). """
+    que hay por cobrarle a un cliente (ver `get_cobro`), el alta de un
+    cliente nuevo (ver `crear_cliente`) y la búsqueda de un pedido igual del
+    mismo día, de solo lectura (ver `_pedido_igual_hoy`). """
     _name = "duran.captura"
     _description = "Captura de pedidos en tianguis"
 
@@ -153,17 +154,28 @@ class DuranCaptura(models.AbstractModel):
         return [self._get_producto_vals(producto, currency, uom_unidad) for producto in productos]
 
     @api.model
-    def enviar_pedido(self, cliente_id, zona_id, lineas, token, extra=False):
+    def enviar_pedido(self, cliente_id, zona_id, lineas, token, extra=False, es_otro=False):
         """ Crea SIEMPRE una orden nueva para el cliente (nunca suma a una
         existente), marcada con la zona desde la que se eligió y con quien
         captura como vendedor, y la confirma.
 
+        1. Valida el token.
+        2. Si ya hay una orden con ese token (doble toque, reintento tras
+           perder la señal), la devuelve sin crear otra y sin avisar nada.
+        3. Valida zona, cliente, líneas y productos.
+        4. Si el cliente ya tiene en este día operativo un pedido igual (ver
+           `_pedido_igual_hoy`) y la pantalla no dijo que es otro pedido
+           (`es_otro`), lo devuelve como posible duplicado SIN crear nada.
+        5. Crea la orden y la confirma.
+
         :param lineas: [{"producto_id": int, "cantidad": int >= 1}, ...]
-        :param token: identificador del pedido generado por la pantalla. Si ya
-            hay una orden con ese token (doble toque, reintento tras perder la
-            señal), se devuelve esa orden en lugar de crear otra.
+        :param token: identificador del pedido generado por la pantalla.
         :param extra: levantado con «El cliente quiere algo más» durante una
             entrega: queda fuera de esa entrega (ver `_movimientos_pendientes`).
+        :param es_otro: quien captura ya vio el aviso de pedido repetido y
+            dijo «Es otro pedido».
+        :return: el resultado del envío (`_resultado_envio`), o
+            {"posible_duplicado": {nombre, hora, estado, quien}}
 
         Todo corre en una sola transacción: si algo falla (incluida la
         confirmación), no queda ninguna orden a medias. """
@@ -172,6 +184,8 @@ class DuranCaptura(models.AbstractModel):
         if ya_enviada:
             return self._resultado_envio(ya_enviada, ya_existia=True)
 
+        if not isinstance(es_otro, bool):
+            raise UserError(_("No se pudo confirmar el pedido. Recarga la página e intenta de nuevo."))
         zona = self._zona(zona_id)
         cliente = self._cliente_en_zona(cliente_id, zona)
 
@@ -189,6 +203,11 @@ class DuranCaptura(models.AbstractModel):
                 productos=", ".join(no_disponibles.mapped("display_name")) or _("(borrados)"),
             ))
 
+        if not es_otro:
+            igual = self._pedido_igual_hoy(cliente, cantidades)
+            if igual:
+                return {"posible_duplicado": igual}
+
         orden = self.env["sale.order"].create({
             "partner_id": cliente.id,
             "zona_id": zona.id,
@@ -202,6 +221,84 @@ class DuranCaptura(models.AbstractModel):
         })
         orden.action_confirm()
         return self._resultado_envio(orden, ya_existia=False)
+
+    @api.model
+    def _pedido_igual_hoy(self, cliente, cantidades):
+        """ El pedido más reciente del cliente (o de sus direcciones) en el día
+        operativo de hoy (`_rango_dia_operativo`, con su corte de las 20:00)
+        con exactamente los mismos productos y cantidades que `cantidades`
+        ({producto_id: cantidad}), sin importar el orden ni si un producto
+        viene en varias líneas. Solo órdenes confirmadas (`sale`): las
+        cotizaciones y las canceladas no cuentan. Los productos que quedaron
+        en 0 (bajados al entregar porque no se los llevó) no cuentan; si la
+        entrega bajó una cantidad, ya no es igual.
+
+        :return: {"nombre", "hora", "estado", "quien"} o False
+
+        Permiso acotado (sudo, solo lectura): con "Ventas: solo sus
+        documentos" quien captura no vería los pedidos que levantó otra
+        persona, que son justo los que hay que avisar. Se limita a este
+        cliente y a este día, y solo devuelve el folio, la hora local, el
+        estado y quién lo envió (si no fue quien captura); nunca importes ni
+        líneas. """
+        desde, hasta = self._rango_dia_operativo(self._ahora())
+        grupos = self.env["sale.order.line"].sudo()._read_group(
+            [
+                ("order_id.partner_id", "child_of", cliente.id),
+                ("order_id.state", "=", "sale"),
+                ("order_id.date_order", ">=", desde),
+                ("order_id.date_order", "<", hasta),
+                ("display_type", "=", False),
+                ("product_id", "!=", False),
+            ],
+            groupby=["order_id", "product_id", "product_uom_id"],
+            aggregates=["product_uom_qty:sum"],
+        )
+        por_orden = defaultdict(lambda: defaultdict(float))
+        for orden, producto, unidad, cantidad in grupos:
+            if unidad and unidad != producto.uom_id:
+                cantidad = unidad._compute_quantity(cantidad, producto.uom_id)
+            por_orden[orden][producto.id] += cantidad
+        buscado = {producto_id: float(cantidad) for producto_id, cantidad in cantidades.items()}
+        iguales = [
+            orden for orden, productos in por_orden.items()
+            if self._mismas_cantidades(productos, buscado)
+        ]
+        if not iguales:
+            return False
+        orden = max(iguales, key=lambda o: (o.date_order, o.id))
+        # En /captura el vendedor es quien envió; una orden hecha en Odoo sin
+        # vendedor, quien la creó.
+        vendedor = orden.user_id or orden.create_uid
+        zona_horaria = pytz.timezone(self.env.user.tz or ZONA_HORARIA_OPERACION)
+        hora = pytz.utc.localize(orden.date_order).astimezone(zona_horaria)
+        return {
+            "nombre": orden.name,
+            "hora": hora.strftime("%H:%M"),
+            "estado": self._estado_pedido(orden),
+            "quien": vendedor.name if vendedor and vendedor != self.env.user else False,
+        }
+
+    @staticmethod
+    def _mismas_cantidades(productos, buscado):
+        """ ¿Mismos productos con las mismas cantidades? Los que suman 0 no cuentan. """
+        productos = {p: c for p, c in productos.items() if not float_is_zero(c, precision_digits=3)}
+        return productos.keys() == buscado.keys() and all(
+            float_is_zero(productos[p] - buscado[p], precision_digits=3) for p in buscado
+        )
+
+    @api.model
+    def _estado_pedido(self, orden):
+        """ "cobrado": ya pasó por Cobro, que factura lo entregado (también con
+        «No pagó hoy»): todo facturado; "entregado":
+        no le queda ninguna entrega pendiente y al menos una se validó;
+        "pendiente": lo demás. `orden` viene con sudo (`_pedido_igual_hoy`). """
+        if orden.invoice_status == "invoiced":
+            return "cobrado"
+        entregas = orden.picking_ids.filtered(lambda p: p.picking_type_code == "outgoing")
+        if entregas and all(p.state in ("done", "cancel") for p in entregas) and "done" in entregas.mapped("state"):
+            return "entregado"
+        return "pendiente"
 
     # === Cliente nuevo (desde Pedido) === #
 

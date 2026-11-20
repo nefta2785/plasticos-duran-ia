@@ -587,6 +587,17 @@ button {
     line-height: 1.1;
     overflow-wrap: anywhere;
 }
+/* No se hizo nada (pedido que ya estaba): azul, nunca el verde de "enviado". */
+.exito-neutra {
+    border-color: var(--primario);
+    background: var(--seleccion);
+}
+.exito-neutra .exito-marca {
+    background: var(--primario);
+    font-family: Georgia, "Times New Roman", serif;
+    font-style: italic;
+}
+.exito-neutra .exito-titulo { color: var(--primario); }
 .enviado-titulo {
     margin: 0 0 6px;
     font-size: 24px;

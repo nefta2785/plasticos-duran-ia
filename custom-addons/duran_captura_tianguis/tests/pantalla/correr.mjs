@@ -121,7 +121,7 @@ try {
             "--no-default-browser-check",
             "--allow-file-access-from-files",
             "--window-size=500,900", // el ancho de celular lo da el marco (ver arriba)
-            "--virtual-time-budget=60000",
+            "--virtual-time-budget=120000", // dos páginas, cada una con hasta 60 s (escenario.js)
             "--dump-dom",
             url(rutaMarco),
         ],

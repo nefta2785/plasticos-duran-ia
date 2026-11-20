@@ -52,14 +52,24 @@ const envios = []; // parámetros de cada envío recibido
 const llamadas = []; // rutas llamadas, en orden
 const foliosPorToken = new Map(); // simula el captura_token único del servidor
 let siguienteFolio = 50;
+// Aviso de pedido repetido: mientras tenga datos ({nombre, hora, estado,
+// quien}), el cliente "ya tiene hoy un pedido igual". Como el servidor: un
+// token ya usado devuelve su orden sin avisar, y con `es_otro` se crea.
+let repetidoSimulado = null;
 
 function enviarSimulado(params) {
     envios.push(params);
-    // `extra` (pedido de «El cliente quiere algo más»): solo se manda, y como true.
-    if ("extra" in params && params.extra !== true) {
-        return {
-            error: { code: 200, message: "Odoo Server Error", data: { name: "TypeError", message: "extra inválido" } },
-        };
+    // `extra` (pedido de «El cliente quiere algo más») y `es_otro` («Es otro
+    // pedido»): solo se mandan, y como true.
+    for (const opcion of ["extra", "es_otro"]) {
+        if (opcion in params && params[opcion] !== true) {
+            return {
+                error: { code: 200, message: "Odoo Server Error", data: { name: "TypeError", message: `${opcion} inválido` } },
+            };
+        }
+    }
+    if (repetidoSimulado && !params.es_otro && !foliosPorToken.has(params.token)) {
+        return { result: { posible_duplicado: repetidoSimulado } }; // no se crea nada
     }
     if (modoEnvio === "sin-red") {
         // El servidor SÍ creó la orden, pero la respuesta no llegó.

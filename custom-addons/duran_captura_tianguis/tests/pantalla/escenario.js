@@ -1925,6 +1925,233 @@ async function pasoClienteNuevo() {
     check("INICIO desde «Cliente nuevo» con algo escrito: directo, sin preguntar ni recordatorio", [txt("#titulo"), q("#modal").hidden, recordatorios()], ["Captura", true, []]);
 }
 
+// === Aviso de pedido repetido ===
+
+async function abrirPedidoDe(cliente, zona = "Bosques") {
+    modo("Pedido").click();
+    await espera(80);
+    boton(zona).click();
+    await espera(80);
+    boton(cliente).click();
+    await espera(150);
+}
+
+function checkAvisoRepetido(pantalla, texto) {
+    check(`Aviso de pedido repetido: ${pantalla}`, preguntaAbierta(), [
+        false, "Este pedido parece repetido", texto, "Es otro pedido", "Cierto, el pedido ya fue enviado",
+    ]);
+}
+
+async function pasoPedidoRepetido() {
+    // Ya en el Inicio. El servidor responde que Doña Carmen ya tiene hoy un pedido igual.
+    await abrirPedidoDe("Doña Carmen");
+    await tocarProducto(409, 2);
+    q("#btn-pedido").click();
+    await espera(60);
+    repetidoSimulado = { nombre: "S00203", hora: "10:42", estado: "pendiente", quien: false };
+    const antes = envios.length;
+    q("#btn-pedido").click();
+    await espera(250);
+    const texto = "Ya enviaste un pedido igual de Doña Carmen hoy a las 10:42 (S00203).";
+    checkAvisoRepetido("lo envió quien captura, sin entregar", texto);
+    check(
+        "Aviso: el primer envío va sin es_otro",
+        [envios.length, "es_otro" in envios[antes], /^[0-9a-f]{32}$/.test(envios[antes].token)],
+        [antes + 1, false, true]
+    );
+    const si = q("#modal-si");
+    const no = q("#modal-no");
+    check(
+        "Aviso: «Es otro pedido» verde arriba, «Cierto, el pedido ya fue enviado» de contorno abajo y con el foco",
+        [
+            si.classList.contains("btn-exito"), getComputedStyle(si).backgroundColor,
+            no.classList.contains("btn-secundario"), document.activeElement === no,
+            si.getBoundingClientRect().bottom <= no.getBoundingClientRect().top,
+            si.offsetHeight >= 60 && no.offsetHeight >= 60,
+        ],
+        [true, VERDE, true, true, true, true]
+    );
+    // Texto largo a 393 px: dos renglones completos, centrado, sin cortarse ni salirse.
+    const renglonesNo = (() => {
+        const rango = document.createRange();
+        rango.selectNodeContents(no);
+        return new Set([...rango.getClientRects()].map((r) => Math.round(r.top))).size;
+    })();
+    const rNo = no.getBoundingClientRect();
+    check(
+        "«Cierto, el pedido ya fue enviado» a 393 px: dos renglones, centrado, sin cortarse ni salirse",
+        [
+            renglonesNo, getComputedStyle(no).textAlign, no.scrollWidth <= no.clientWidth,
+            no.scrollHeight <= no.clientHeight, rNo.left >= 0 && rNo.right <= window.innerWidth,
+            rNo.bottom <= window.innerHeight,
+        ],
+        [2, "center", true, true, true, true]
+    );
+    check("Aviso abierto: INICIO gris", inicioGris(), true);
+    checkAncho("aviso de pedido repetido");
+
+    // Tocar el fondo o "atrás": se queda en el resumen, sin enviar.
+    await responderSalida("quedarse");
+    const enElResumen = [true, "Doña Carmen", "Falta enviar el pedido", "2 productos en el pedido", "Falta un paso: este pedido todavía NO se ha enviado"];
+    const resumenAhora = () => [q("#modal").hidden, txt("#titulo"), txt(".pregunta"), txt("#pedido-conteo"), txt("#falta-paso")];
+    check("Aviso, tocar el fondo: sigue en el resumen sin enviar, con el pedido", resumenAhora(), enElResumen);
+    q("#btn-pedido").click();
+    await espera(250);
+    checkAvisoRepetido("al volver a tocar Enviar", texto);
+    history.back();
+    await espera(150);
+    check("Aviso, «atrás» del celular: sigue en el resumen sin enviar", resumenAhora(), enElResumen);
+    check("Sin enviar nada: tres envíos, todos sin es_otro y con el mismo token", [
+        envios.length - antes, envios.slice(antes).every((e) => !("es_otro" in e) && e.token === envios[antes].token),
+    ], [2, true]);
+
+    // «Cierto, el pedido ya fue enviado»: no se envía nada; pantalla neutra (azul, no verde).
+    q("#btn-pedido").click();
+    await espera(250);
+    const envioAntesDeNo = envios.length;
+    await responderModal(false);
+    check(
+        "«Cierto, el pedido ya fue enviado»: pantalla neutra con el pedido que ya estaba",
+        [txt("#titulo"), txt(".exito-titulo"), txt(".enviado-detalle"), txt(".exito-marca"), envios.length],
+        ["Pedido no repetido", "NO SE REPITIÓ EL PEDIDO", "Ya estaba enviado: S00203, Doña Carmen, 10:42", "i", envioAntesDeNo]
+    );
+    const bloque = q(".exito");
+    check(
+        "«Cierto, el pedido ya fue enviado»: azul, nunca el verde de enviado; marca de 140px y título de 34px",
+        [
+            getComputedStyle(bloque).backgroundColor, getComputedStyle(bloque).borderTopColor,
+            getComputedStyle(q(".exito-marca")).backgroundColor, getComputedStyle(q(".exito-titulo")).color,
+            [q(".exito-marca").offsetWidth, q(".exito-marca").offsetHeight], getComputedStyle(q(".exito-titulo")).fontSize,
+        ],
+        ["rgb(227, 236, 255)", AZUL_INICIO, AZUL_INICIO, AZUL_INICIO, [140, 140], "34px"]
+    );
+    check(
+        "«Cierto, el pedido ya fue enviado»: siguiente cliente y cambiar de zona; sin barra ni nada pendiente",
+        [qa(".lista .btn").map((b) => b.textContent), q("#barra-pedido").hidden, pideConfirmarAlSalir()],
+        [["Siguiente cliente de Bosques", "Cambiar de zona"], true, false]
+    );
+    checkOperacion("pedido", "Pedido no repetido");
+    checkAncho("Pedido no repetido");
+    await tocarInicio();
+    check(
+        "INICIO después de «Cierto, el pedido ya fue enviado»: directo, sin preguntar y sin «Pedido sin enviar»",
+        [txt("#titulo"), q("#modal").hidden, recordatorios().some((r) => r.includes("Pedido sin enviar"))],
+        ["Captura", true, false]
+    );
+
+    // «Es otro pedido»: otra persona y ya entregado; doble toque y sin señal.
+    repetidoSimulado = { nombre: "S00204", hora: "09:05", estado: "entregado", quien: "Raúl" };
+    await abrirPedidoDe("Doña Carmen");
+    await tocarProducto(409, 1);
+    q("#btn-pedido").click();
+    await espera(60);
+    q("#btn-pedido").click();
+    await espera(250);
+    checkAvisoRepetido(
+        "lo envió otra persona y ya se entregó",
+        "Raúl ya envió un pedido igual de Doña Carmen hoy a las 09:05 (S00204). Ya se le entregó."
+    );
+    const n = envios.length;
+    const token = envios[n - 1].token;
+    modoEnvio = "sin-red";
+    q("#modal-si").click();
+    q("#modal-si").click(); // doble toque en «Es otro pedido»…
+    q("#btn-pedido").click(); // …y el que cae en el botón de abajo
+    await espera(10);
+    check("«Es otro pedido»: enviando, con el botón de abajo bloqueado", [txt("#pedido-accion"), q("#btn-pedido").disabled], ["ENVIANDO…", true]);
+    await espera(250);
+    check(
+        "«Es otro pedido» sin señal: un solo reenvío con el mismo token y es_otro; mensaje, sin volver a preguntar",
+        [envios.length, envios[n].token === token, envios[n].es_otro, q("#modal").hidden, txt(".error-envio")],
+        [n + 1, true, true, true, "No se pudo confirmar si el pedido llegó. Toca «Enviar pedido» otra vez: si ya había llegado, no se duplica."]
+    );
+    q("#btn-pedido").click();
+    await espera(250);
+    check(
+        "Reintento: mismo token y es_otro, sin aviso; pedido enviado",
+        [envios.length, envios[n + 1].token === token, envios[n + 1].es_otro, q("#modal").hidden, txt("#titulo"), txt(".enviado-titulo")],
+        [n + 2, true, true, true, "Pedido enviado", `Pedido ${foliosPorToken.get(token)}`]
+    );
+    checkExito("Pedido enviado después de «Es otro pedido»", "PEDIDO ENVIADO");
+
+    // Cambiar una cantidad después de «Es otro pedido» lo olvida: vuelve a revisar.
+    boton("Siguiente cliente de Bosques").click();
+    await espera(120);
+    boton("Doña Carmen").click();
+    await espera(150);
+    await tocarProducto(409, 1);
+    q("#btn-pedido").click();
+    await espera(60);
+    q("#btn-pedido").click();
+    await espera(250);
+    modoEnvio = "error";
+    await responderModal(true);
+    await espera(150);
+    const conError = envios[envios.length - 1];
+    check(
+        "«Es otro pedido» con error del servidor: se queda en el resumen con el mensaje",
+        [conError.es_otro, txt(".pregunta"), txt(".error-envio")],
+        [true, "Falta enviar el pedido", "No se envió el pedido: Estos productos ya no están a la venta: Blanca #2. Quítalos del pedido e intenta de nuevo."]
+    );
+    await regresar();
+    await tocarProducto(409, 1);
+    q("#btn-pedido").click();
+    await espera(60);
+
+    // Desde «✓ Enviar pedido ahora» (pregunta de INICIO): el aviso abre bien después.
+    const m = envios.length;
+    await tocarInicio();
+    check("INICIO desde el resumen: «✓ Enviar pedido ahora»", txt("#modal-si"), "✓ Enviar pedido ahora");
+    await responderSalida("ahora");
+    await espera(150);
+    checkAvisoRepetido("desde «✓ Enviar pedido ahora»", "Raúl ya envió un pedido igual de Doña Carmen hoy a las 09:05 (S00204). Ya se le entregó.");
+    check(
+        "Pedido cambiado: token nuevo y sin es_otro (se vuelve a revisar)",
+        [envios.length, "es_otro" in envios[m], envios[m].token !== conError.token, envios[m].lineas],
+        [m + 1, false, true, [{ producto_id: 409, cantidad: 2 }]]
+    );
+    await responderModal(true);
+    await espera(150);
+    check(
+        "«Es otro pedido» desde la pregunta de INICIO: enviado, mismo token",
+        [txt("#titulo"), envios.length, envios[m + 1].es_otro, envios[m + 1].token === envios[m].token],
+        ["Pedido enviado", m + 2, true, true]
+    );
+    await tocarInicio();
+
+    // «+ El cliente quiere algo más»: también avisa; «Cierto, el pedido ya fue enviado» regresa a la entrega.
+    modo("Entrega").click();
+    await espera(80);
+    boton("Bosques").click();
+    await espera(80);
+    boton("Doña Carmen").click();
+    await espera(150);
+    boton("➕ El cliente quiere algo más").click();
+    await espera(150);
+    await tocarProducto(409, 1);
+    q("#btn-pedido").click();
+    await espera(60);
+    repetidoSimulado = { nombre: "S00205", hora: "11:30", estado: "pendiente", quien: false };
+    q("#btn-pedido").click();
+    await espera(250);
+    checkAvisoRepetido("pedido de «algo más»", "Ya enviaste un pedido igual de Doña Carmen hoy a las 11:30 (S00205).");
+    check("«Algo más»: el envío va como extra", envios[envios.length - 1].extra, true);
+    await responderModal(false);
+    check(
+        "«Algo más», «Cierto, el pedido ya fue enviado»: pantalla neutra con «Regresar a la entrega» y «Cambiar de zona»",
+        [txt(".exito-titulo"), txt(".enviado-detalle"), qa(".lista .btn").map((b) => [b.textContent, b.classList.contains("btn-primario")])],
+        ["NO SE REPITIÓ EL PEDIDO", "Ya estaba enviado: S00205, Doña Carmen, 11:30", [["‹ Regresar a la entrega de Doña Carmen", true], ["Cambiar de zona", false]]]
+    );
+    checkAncho("Pedido no repetido desde «algo más»");
+    botonRegresarEntrega().click();
+    await espera(150);
+    check("Regresar: de vuelta a la entrega de Doña Carmen", [txt("#titulo"), txt(".pregunta")], ["Doña Carmen", "¿Qué se lleva?"]);
+    checkOperacion("entrega", "de regreso del pedido no repetido");
+    repetidoSimulado = null;
+    modoEnvio = "ok";
+    await irAInicio();
+}
+
 // === Usuario de tianguis (sin data-salir en <body>) ===
 
 async function pasoTianguisSinSalir() {
@@ -1999,14 +2226,14 @@ const PASOS = [
     pasoResumen, pasoEnviar, pasoInicioConPedido, pasoEntregaClientes, pasoEntregaLista, pasoEntregaResumen,
     pasoEntregaConfirmar, pasoEntregaAlgoMasYNada, pasoEntregaPendientes,
     pasoCobroClientes, pasoCobroAvisos, pasoCobroDetalle, pasoCobroParte, pasoCobroEnviar, pasoCobroTodoYNada,
-    pasoHistorialLargo, pasoAcomodo, pasoTarjetasGrandes, pasoClienteNuevo,
+    pasoHistorialLargo, pasoAcomodo, pasoTarjetasGrandes, pasoClienteNuevo, pasoPedidoRepetido,
 ];
 
 window.addEventListener("load", async () => {
     let pasoActual = "arranque";
     // Si un paso se queda esperando (p. ej. un modal sin responder), se
     // publican los resultados de todos modos, diciendo en qué paso se atoró.
-    const limite = new Promise((resolver) => setTimeout(() => resolver("tiempo"), 45000));
+    const limite = new Promise((resolver) => setTimeout(() => resolver("tiempo"), 60000));
     const recorrido = (async () => {
         await espera(80);
         for (const paso of document.body.dataset.salir === "1" ? PASOS : PASOS_TIANGUIS) {

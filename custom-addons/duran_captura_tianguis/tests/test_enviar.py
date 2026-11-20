@@ -60,7 +60,8 @@ class TestEnviarHttp(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         existente = self._orden(self.cliente, [(self.normal, 1)], estado="draft")
         self._entrar(self.usuario_captura)
         primera = self._enviar([(self.normal, 1)])
-        segunda = self._enviar([(self.normal, 1)])
+        # El mismo pedido otra vez avisa (test_pedido_repetido); con «Es otro pedido», se crea.
+        segunda = self._resultado("/captura/api/enviar", {**self._params_envio([(self.normal, 1)]), "es_otro": True})
         self.assertEqual(len({existente.id, primera["id"], segunda["id"]}), 3)
         self.env.invalidate_all()
         self.assertEqual(len(existente.order_line), 1, "no se suma a la orden existente")
@@ -80,7 +81,9 @@ class TestEnviarHttp(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         (fuera de la entrega en curso). Un pedido normal no; duplicarla tampoco. """
         self._entrar(self.usuario_captura)
         normal = self._enviar([(self.normal, 1)])
-        extra = self._resultado("/captura/api/enviar", {**self._params_envio([(self.normal, 1)]), "extra": True})
+        extra = self._resultado(
+            "/captura/api/enviar", {**self._params_envio([(self.normal, 1)]), "extra": True, "es_otro": True},
+        )
         self.env.invalidate_all()
         Orden = self.env["sale.order"]
         self.assertFalse(Orden.browse(normal["id"]).captura_pedido_extra)
@@ -102,7 +105,9 @@ class TestEnviarHttp(CapturaDatosPrueba, CapturaHttpMixin, HttpCase):
         self._entrar(self.usuario_captura)
         for zona in (otra_zona, self.zona_con_clientes):
             with self.subTest(zona=zona.name):
-                envio = self._enviar([(self.normal, 1)], zona=zona)
+                envio = self._resultado(
+                    "/captura/api/enviar", {**self._params_envio([(self.normal, 1)], zona=zona), "es_otro": True},
+                )
                 self.env.invalidate_all()
                 self.assertEqual(self.env["sale.order"].browse(envio["id"]).zona_id, zona)
 

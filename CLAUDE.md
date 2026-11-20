@@ -48,6 +48,8 @@ Después de actualizar un módulo: reiniciar Odoo y abrir la pantalla afectada e
 - Peso variable: precio por kg en `precio_por_kg`, peso real por rollo, cada rollo es una línea de factura.
 - Se factura al cobrar y solo en efectivo (un único diario de tipo Efectivo).
 - No se usa la app de Punto de Venta.
+- Pedido igual = mismo cliente, día operativo (corte de las 20:00) y mismo contenido (productos y
+  cantidades). Se avisa al enviar ("Este pedido parece repetido"), no se bloquea.
 - Zonas = etiquetas de contacto (Bosques, Guadalupana, Entrada Heroes, Kinder, Locatarios). No se
   modifican. (Zonas confirmadas por Nefta; el repo solo contiene datos de prueba.)
 

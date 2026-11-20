@@ -14,6 +14,7 @@ from . import test_entrega_vista_previa
 from . import test_enviar
 from . import test_lo_de_siempre
 from . import test_pagina_y_rutas
+from . import test_pedido_repetido
 from . import test_pendiente_cobro
 from . import test_productos_vendidos
 from . import test_zona_y_seguridad
