@@ -324,6 +324,50 @@ button {
 /* Zona vacía: entre el aviso y "Regresar a zonas". */
 .aviso + .btn-cliente-nuevo { margin-bottom: 12px; }
 
+/* === Clientes: búsqueda (lupa abajo a la derecha, campo arriba de la lista) === */
+
+/* Fija, por debajo de las preguntas (z-index 20). Solo existe en la lista de
+   clientes, que no tiene la franja de abajo. */
+.btn-lupa {
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    z-index: 10;
+    width: 64px;
+    height: 64px;
+    padding: 0;
+    border: 3px solid var(--primario-texto);
+    border-radius: 50%;
+    background: var(--color-operacion, var(--primario));
+    color: var(--primario-texto);
+    font-size: 30px;
+    line-height: 1;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.btn-lupa:active { transform: scale(0.95); }
+/* Con la lupa visible, espacio al final para que no tape al último cliente. */
+.lista.con-lupa { padding-bottom: calc(64px + 16px + env(safe-area-inset-bottom)); }
+
+.buscador {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 16px;
+    /* Al abrirla queda justo bajo la barra fija de arriba, no debajo de ella. */
+    scroll-margin-top: calc(var(--alto-barra, 70px) + 8px);
+}
+.campo-buscar { flex: 1; min-width: 0; }
+.btn-cerrar-busqueda {
+    flex: none;
+    width: 64px;
+    min-height: 60px;
+    border: 3px solid var(--borde);
+    border-radius: var(--radio);
+    background: var(--fondo);
+    font-size: 28px;
+    font-weight: 900;
+}
+.btn-cerrar-busqueda:active { background: var(--seleccion); }
+
 .zona-cliente-nuevo {
     margin: 4px 0 12px;
     font-size: 21px;

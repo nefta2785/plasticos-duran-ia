@@ -820,6 +820,17 @@
             );
             return;
         }
+        const listaClientes = lista(
+            clientes.map((cliente) =>
+                el("button", {
+                    type: "button",
+                    class: "btn",
+                    text: cliente.nombre,
+                    onclick: () => abrirCliente(cliente, entrega ? "entrega" : cobrando ? "cobro" : "productos"),
+                })
+            )
+        );
+        const busqueda = buscadorClientes(listaClientes);
         mostrar(
             el("p", {
                 class: "pregunta",
@@ -830,17 +841,103 @@
                       : "¿A quién le levantas el pedido?",
             }),
             botonNuevo,
-            lista(
-                clientes.map((cliente) =>
-                    el("button", {
-                        type: "button",
-                        class: "btn",
-                        text: cliente.nombre,
-                        onclick: () => abrirCliente(cliente, entrega ? "entrega" : cobrando ? "cobro" : "productos"),
-                    })
-                )
-            )
+            busqueda.campo,
+            listaClientes,
+            busqueda.sinResultados,
+            busqueda.lupa
         );
+    }
+
+    // === Búsqueda de clientes (lupa) ===
+
+    function sinAcentos(texto) {
+        // "Doña María" -> "dona maria": sin acentos, sin mayúsculas y con un
+        // solo espacio entre palabras.
+        return texto
+            .normalize("NFD")
+            .replace(/[̀-ͯ]/g, "")
+            .toLowerCase()
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    function buscadorClientes(listaClientes) {
+        // Lupa flotante abajo a la derecha; al tocarla, un campo arriba de la
+        // lista (con el teclado abierto se sigue viendo, a diferencia de un
+        // panel desde abajo). Filtra ocultando renglones, sin redibujar la
+        // pantalla (no se pierde el cursor), y no agrega pasos al historial.
+        // Todo vive en el contenido: al salir de la lista, mostrar() lo quita.
+        const renglones = [...listaClientes.children].map((li) => ({
+            li,
+            nombre: sinAcentos(li.textContent),
+        }));
+        const sinResultados = el("p", {
+            class: "aviso sin-resultados",
+            text: "No hay nadie con ese nombre en esta zona",
+            hidden: "hidden",
+        });
+        const filtrar = () => {
+            const buscado = sinAcentos(campo.value);
+            let visibles = 0;
+            for (const r of renglones) {
+                r.li.hidden = !r.nombre.includes(buscado);
+                visibles += r.li.hidden ? 0 : 1;
+            }
+            sinResultados.hidden = visibles > 0;
+        };
+        const campo = el("input", {
+            class: "campo-texto campo-buscar",
+            type: "text",
+            name: "buscar",
+            placeholder: "Buscar cliente…",
+            "aria-label": "Buscar cliente",
+            autocomplete: "off",
+            autocorrect: "off",
+            autocapitalize: "off",
+            spellcheck: "false",
+            enterkeyhint: "search",
+            oninput: filtrar,
+            onkeydown: (evento) => {
+                if (evento.key === "Enter") {
+                    campo.blur(); // cierra el teclado para ver los resultados
+                }
+            },
+        });
+        const fila = el(
+            "div",
+            { class: "buscador", role: "search", hidden: "hidden" },
+            campo,
+            el("button", {
+                type: "button",
+                class: "btn-cerrar-busqueda",
+                "aria-label": "Cerrar búsqueda",
+                text: "✕",
+                onclick: () => {
+                    campo.value = "";
+                    filtrar();
+                    fila.hidden = true;
+                    lupa.hidden = false;
+                    listaClientes.classList.add("con-lupa");
+                },
+            })
+        );
+        const lupa = el("button", {
+            type: "button",
+            class: "btn-lupa",
+            "aria-label": "Buscar cliente",
+            text: "🔍",
+            onclick: () => {
+                lupa.hidden = true;
+                listaClientes.classList.remove("con-lupa");
+                fila.hidden = false;
+                // Arriba de la pantalla, justo bajo la barra, para que el
+                // teclado no tape ni el campo ni los primeros resultados.
+                fila.scrollIntoView({ block: "start" });
+                campo.focus();
+            },
+        });
+        listaClientes.classList.add("con-lupa");
+        return { campo: fila, sinResultados, lupa };
     }
 
     // === Pantalla: Cliente nuevo (solo Pedido) ===

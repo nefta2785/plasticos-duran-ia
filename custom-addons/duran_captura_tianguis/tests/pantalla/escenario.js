@@ -2152,6 +2152,219 @@ async function pasoPedidoRepetido() {
     await irAInicio();
 }
 
+// === Búsqueda de clientes (lupa) ===
+
+const lupa = () => q(".btn-lupa");
+// La lupa es fija: offsetParent siempre es null, se ve si tiene caja.
+const lupaVisible = () => Boolean(lupa() && lupa().getClientRects().length > 0);
+const campoBuscar = () => q(".campo-buscar");
+const clientesVisibles = () => qa(".lista li").filter((li) => !li.hidden).map((li) => li.textContent);
+// Independiente de captura.js: quitar acentos y mayúsculas.
+const sinAcentosPrueba = (texto) => texto.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+const NOMBRE_OPERACION = { pedido: "Pedido", entrega: "Entrega", cobro: "Cobro" };
+
+async function buscar(texto) {
+    // Como el teclado: cambia el valor y dispara "input".
+    campoBuscar().value = texto;
+    campoBuscar().dispatchEvent(new Event("input", { bubbles: true }));
+    await espera(10);
+}
+
+function checkSinLupa(pantalla) {
+    check(`Sin lupa: ${pantalla}`, [q(".btn-lupa"), q(".buscador")], [null, null]);
+}
+
+async function abrirZona(operacion, zona) {
+    modo(NOMBRE_OPERACION[operacion]).click();
+    await espera(80);
+    checkSinLupa(`Zonas de ${NOMBRE_OPERACION[operacion]}`);
+    boton(zona).click();
+    await espera(80);
+}
+
+async function checkLupaEnClientes(operacion) {
+    const nombre = NOMBRE_OPERACION[operacion];
+    const todos = clientesVisibles();
+    const nuevos = qa(".btn-cliente-nuevo").length;
+    const historial = history.length;
+    const estilo = getComputedStyle(lupa());
+    const r = lupa().getBoundingClientRect();
+    check(
+        `${nombre}: tras elegir zona, lupa redonda de 64px abajo a la derecha, fija, bajo las preguntas y fuera de .lista`,
+        [
+            lupaVisible(), lupa().textContent, [Math.round(r.width), Math.round(r.height)],
+            [Math.round(window.innerWidth - r.right), Math.round(window.innerHeight - r.bottom)],
+            estilo.position, estilo.zIndex, estilo.borderRadius, lupa().closest(".lista"), q(".buscador").hidden,
+            Number(estilo.zIndex) < Number(getComputedStyle(q("#modal")).zIndex),
+        ],
+        [true, "🔍", [64, 64], [16, 16], "fixed", "10", "50%", null, true, true]
+    );
+    check(`${nombre}: con la lupa, todos los clientes de la zona visibles`, todos.length, qa(".lista li").length);
+
+    // Lista larga (pantalla baja): deslizando hasta abajo, el último cliente
+    // queda completo arriba de la lupa.
+    const marco = window.frameElement;
+    const libre = [];
+    for (const alto of [852, 480]) {
+        marco.style.height = `${alto}px`;
+        await espera(80);
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        await espera(30);
+        const ultimo = q(".lista li:last-child").getBoundingClientRect();
+        libre.push([alto, ultimo.bottom <= lupa().getBoundingClientRect().top]);
+    }
+    marco.style.height = `${CELULAR[1]}px`;
+    await espera(80);
+    window.scrollTo(0, 0);
+    check(`${nombre}: la lupa no tapa al último cliente (852 y 480 de alto)`, libre, [[852, true], [480, true]]);
+
+    // Abrir: se oculta la lupa y aparece el campo arriba de la lista, con el cursor.
+    lupa().click();
+    await espera(30);
+    const fila = q(".buscador").getBoundingClientRect();
+    const campo = campoBuscar();
+    check(
+        `${nombre}: al tocar la lupa, se oculta y aparece «Buscar cliente…» arriba de la lista, con el cursor y «✕»`,
+        [
+            lupaVisible(), q(".buscador").hidden, document.activeElement === campo, campo.placeholder,
+            fila.bottom <= q(".lista").getBoundingClientRect().top, q(".buscador").closest(".lista"),
+            !!boton("✕"), getComputedStyle(q(".lista")).paddingBottom,
+        ],
+        [false, false, true, "Buscar cliente…", true, null, true, "0px"]
+    );
+    // El teclado de Android tapa la parte de abajo: el campo queda completo
+    // bajo la barra y en la mitad de arriba de la pantalla.
+    const c = campo.getBoundingClientRect();
+    check(
+        `${nombre}: el campo, completo bajo la barra y en la mitad de arriba (sobre el teclado)`,
+        [c.top >= q(".barra").getBoundingClientRect().bottom, c.bottom <= window.innerHeight / 2, c.height >= 60],
+        [true, true, true]
+    );
+
+    // Filtrar: sin acentos, sin mayúsculas y parcial; sin redibujar.
+    for (const texto of ["DOÑA", "dona", "  CaRmEn ", "ria"]) {
+        await buscar(texto);
+        const buscado = sinAcentosPrueba(texto.trim());
+        check(
+            `${nombre}: buscar «${texto}» deja solo los que coinciden, sin perder el cursor ni el campo`,
+            [clientesVisibles(), document.activeElement === campo, campoBuscar() === campo, q(".sin-resultados").hidden],
+            [todos.filter((n) => sinAcentosPrueba(n).includes(buscado)), true, true, todos.some((n) => sinAcentosPrueba(n).includes(buscado))]
+        );
+    }
+    await buscar("doña carmen");
+    check(`${nombre}: «doña carmen» encuentra a Doña Carmen`, clientesVisibles().includes("Doña Carmen"), true);
+
+    // Sin resultados: el aviso, sin ofrecer «+ Cliente nuevo».
+    await buscar("zzzz");
+    check(
+        `${nombre}: sin resultados, «No hay nadie con ese nombre en esta zona» y nada más`,
+        [clientesVisibles(), q(".sin-resultados").hidden, txt(".sin-resultados"), qa(".btn-cliente-nuevo").length],
+        [[], false, "No hay nadie con ese nombre en esta zona", nuevos]
+    );
+
+    // «✕»: borra, cierra el campo, toda la lista y la lupa otra vez.
+    boton("✕").click();
+    await espera(30);
+    check(
+        `${nombre}: «✕» borra, cierra el campo, muestra todos y vuelve la lupa (con su espacio abajo)`,
+        [campo.value, q(".buscador").hidden, clientesVisibles(), q(".sin-resultados").hidden, lupaVisible(), getComputedStyle(q(".lista")).paddingBottom],
+        ["", true, todos, true, true, "80px"]
+    );
+    check(`${nombre}: abrir y cerrar la búsqueda no agrega pasos al historial`, history.length, historial);
+    checkAncho(`clientes de ${nombre} con la lupa`);
+    return todos;
+}
+
+async function tocarResultado(operacion, cliente) {
+    // Abre la búsqueda, escribe el nombre en mayúsculas y sin acentos y toca
+    // el único resultado.
+    lupa().click();
+    await espera(30);
+    await buscar(sinAcentosPrueba(cliente).toUpperCase());
+    const visibles = qa(".lista li").filter((li) => !li.hidden);
+    check(`${NOMBRE_OPERACION[operacion]}: buscar «${cliente}» sin acentos y en mayúsculas lo encuentra`, visibles.map((li) => li.textContent), [cliente]);
+    visibles[0].querySelector(".btn").click();
+    await espera(150);
+    if (!q("#modal").hidden) {
+        // Cobro: otro cobro sin registrar; la misma pregunta que desde la lista.
+        await responderSalida("salir");
+    }
+}
+
+async function volverALaLista(zona) {
+    await regresar();
+    if (!q("#modal").hidden) {
+        await responderSalida("salir");
+    }
+    check(`De regreso a la lista: lupa nueva y búsqueda cerrada (${zona})`, [txt("#titulo"), lupaVisible(), q(".buscador").hidden, campoBuscar().value], [zona, true, true, ""]);
+}
+
+async function pasoBusquedaClientes() {
+    checkSinLupa("Inicio");
+
+    // Pedido
+    await abrirZona("pedido", "Guadalupana");
+    checkSinLupa("zona vacía de Pedido");
+    await regresar();
+    boton("Bosques").click();
+    check("Pedido, mientras carga: sin lupa", [txt(".aviso"), q(".btn-lupa")], ["Cargando clientes…", null]);
+    await espera(80);
+    await checkLupaEnClientes("pedido");
+    await tocarResultado("pedido", "Tortillería La Guadalupana de Doña Lupita");
+    check("Pedido: el resultado abre sus productos, como desde la lista", [txt("#titulo"), txt("#subtitulo"), q("#categorias").hidden], ["Tortillería La Guadalupana de Doña Lupita", "Bosques", false]);
+    checkOperacion("pedido", "productos abiertos desde la búsqueda");
+    checkSinLupa("productos de Pedido");
+    await volverALaLista("Bosques");
+    boton("+ Cliente nuevo").click();
+    await espera(80);
+    checkSinLupa("Cliente nuevo");
+    await irAInicio();
+
+    // Entrega
+    await abrirZona("entrega", "Guadalupana");
+    checkSinLupa("zona sin entregas pendientes");
+    await regresar();
+    boton("Bosques").click();
+    await espera(80);
+    const entregas = await checkLupaEnClientes("entrega");
+    const antesEntrega = llamadasA("entrega/pendiente");
+    await tocarResultado("entrega", entregas[0]);
+    check(
+        "Entrega: el resultado abre lo pendiente del cliente, como desde la lista",
+        [txt("#titulo"), txt("#subtitulo"), llamadasA("entrega/pendiente") - antesEntrega],
+        [entregas[0], "Bosques", 1]
+    );
+    checkOperacion("entrega", "entrega abierta desde la búsqueda");
+    checkSinLupa("lo pendiente de Entrega");
+    await volverALaLista("Bosques");
+    await irAInicio();
+
+    // Cobro
+    await abrirZona("cobro", "Guadalupana");
+    checkSinLupa("zona sin nada por cobrar");
+    await regresar();
+    boton("Bosques").click();
+    await espera(80);
+    const cobros = await checkLupaEnClientes("cobro");
+    const antesCobro = llamadasA("cobro/detalle");
+    await tocarResultado("cobro", "Mario fruta");
+    check(
+        "Cobro: el resultado abre lo que debe el cliente, como desde la lista",
+        [cobros.includes("Mario fruta"), txt("#titulo"), txt("#subtitulo"), llamadasA("cobro/detalle") - antesCobro],
+        [true, "Mario fruta", "Bosques", 1]
+    );
+    checkOperacion("cobro", "cobro abierto desde la búsqueda");
+    checkSinLupa("lo que debe, en Cobro");
+    await volverALaLista("Bosques");
+    await irAInicio();
+
+    // Acomodo de entregas: sin lupa.
+    modo("Acomodo de entregas").click();
+    await espera(150);
+    checkSinLupa("Acomodo de entregas");
+    await irAInicio();
+}
+
 // === Usuario de tianguis (sin data-salir en <body>) ===
 
 async function pasoTianguisSinSalir() {
@@ -2227,6 +2440,7 @@ const PASOS = [
     pasoEntregaConfirmar, pasoEntregaAlgoMasYNada, pasoEntregaPendientes,
     pasoCobroClientes, pasoCobroAvisos, pasoCobroDetalle, pasoCobroParte, pasoCobroEnviar, pasoCobroTodoYNada,
     pasoHistorialLargo, pasoAcomodo, pasoTarjetasGrandes, pasoClienteNuevo, pasoPedidoRepetido,
+    pasoBusquedaClientes,
 ];
 
 window.addEventListener("load", async () => {
