@@ -11,9 +11,7 @@ from .common import GRUPO_CAPTURA
 from .test_cobro_confirmar import CobroDatosPrueba
 
 ZONA_HORARIA = "America/Mexico_City"
-COLUMNAS = [
-    "fecha", "user_id", "partner_id", "zona_id", "tipo", "total_a_cobrar", "monto_recibido", "saldo_pendiente",
-]
+COLUMNAS = ["fecha", "user_id", "partner_id", "zona_id", "tipo", "total_a_cobrar", "monto_recibido"]
 AGREGADOS = ["monto_recibido:sum", "saldo_pendiente:sum", "__count"]
 
 
@@ -97,7 +95,8 @@ class TestCobroArqueo(CobroDatosPrueba, HttpCase):
                 ]
                 self.assertEqual(visibles, COLUMNAS)
                 sumas = {campo.get("name") for campo in etree.fromstring(vista).xpath("//field[@sum]")}
-                self.assertLessEqual({"monto_recibido", "saldo_pendiente"}, sumas)
+                # Sin suma de adeudo: las deudas se ven en Pendiente de cobro.
+                self.assertEqual(sumas, {"total_a_cobrar", "monto_recibido"})
         descripcion = self.Cobro.fields_get(["fecha", "monto_recibido", "saldo_pendiente"], ["type", "aggregator"])
         self.assertEqual(descripcion["fecha"]["type"], "datetime", "fecha y hora")
         self.assertEqual(

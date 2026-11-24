@@ -8,8 +8,9 @@
         <field name="name">duran.captura.cobro.list</field>
         <field name="model">duran.captura.cobro</field>
         <field name="arch" type="xml">
-            <!-- Arqueo: en cada grupo (día, quién cobró) se suman el efectivo
-                 recibido y lo que quedó pendiente. -->
+            <!-- Arqueo: en cada grupo (día, quién cobró) se suman el total a
+                 cobrar y el efectivo recibido. Sin columna de adeudo: las deudas
+                 se ven en Pendiente de cobro. -->
             <list string="Resumen de ventas" js_class="duran_lista_recarga" create="false" edit="false" delete="false">
                 <field name="fecha"/>
                 <field name="user_id" widget="many2one_avatar_user"/>
@@ -20,7 +21,6 @@
                 <field name="currency_id" column_invisible="True"/>
                 <field name="total_a_cobrar" sum="Total a cobrar"/>
                 <field name="monto_recibido" sum="Efectivo recibido"/>
-                <field name="saldo_pendiente" sum="Queda pendiente"/>
             </list>
         </field>
     </record>
@@ -110,7 +110,7 @@
         <field name="context">{'search_default_hoy': 1, 'search_default_agrupar_dia': 1, 'search_default_agrupar_usuario': 2}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Todavía no hay nada en el resumen de ventas</p>
-            <p>Aquí aparece cada cobro confirmado desde la app de captura (modo Cobro): cuánto se cobró, cuánto quedó pendiente y quién cobró.</p>
+            <p>Aquí aparece cada cobro confirmado desde la app de captura (modo Cobro): cuánto había por cobrar, cuánto se cobró y quién cobró.</p>
         </field>
     </record>
 

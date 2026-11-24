@@ -40,11 +40,12 @@ En Odoo: **Ventas › Órdenes › Resumen de ventas**.
 - Se abre con los cobros de **hoy**, agrupados por día y, dentro, por **quién cobró**.
 - En el renglón de cada persona se ven las sumas:
   - **Efectivo recibido**: lo que esa persona debe traer en efectivo.
-  - **Queda pendiente**: lo que los clientes quedaron debiendo.
 - Cuenten el efectivo de cada quien y compárenlo con su **Efectivo recibido**. Si no cuadra,
   abran el grupo y revisen cobro por cobro.
 - Para ver otro día: quiten el filtro **Hoy** y escojan la fecha en **Fecha**.
 - El papá ve los cobros de todos. La mamá ve solo los suyos.
+- Las deudas de los clientes se ven en **Ventas › Órdenes › Pendiente de cobro**, filtro
+  **Solo con saldo anterior**.
 
 ## 5. Una factura "Revertido" también está pagada
 
